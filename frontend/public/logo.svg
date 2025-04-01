@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background Circle -->
+  <circle cx="256" cy="256" r="240" fill="#6366F1" opacity="0.1"/>
+  
+  <!-- Left Hand -->
+  <path d="M180 200C180 180 200 160 220 160C240 160 260 180 260 200C260 220 240 240 220 240C200 240 180 220 180 200Z" fill="#10B981"/>
+  <path d="M160 180C160 160 180 140 200 140C220 140 240 160 240 180C240 200 220 220 200 220C180 220 160 200 160 180Z" fill="#10B981"/>
+  <path d="M140 160C140 140 160 120 180 120C200 120 220 140 220 160C220 180 200 200 180 200C160 200 140 180 140 160Z" fill="#10B981"/>
+  
+  <!-- Right Hand -->
+  <path d="M332 200C332 180 312 160 292 160C272 160 252 180 252 200C252 220 272 240 292 240C312 240 332 220 332 200Z" fill="#F59E0B"/>
+  <path d="M352 180C352 160 332 140 312 140C292 140 272 160 272 180C272 200 292 220 312 220C332 220 352 200 352 180Z" fill="#F59E0B"/>
+  <path d="M372 160C372 140 352 120 332 120C312 120 292 140 292 160C292 180 312 200 332 200C352 200 372 180 372 160Z" fill="#F59E0B"/>
+  
+  <!-- Exchange Arrow -->
+  <path d="M256 160L256 352" stroke="#6366F1" stroke-width="16" stroke-linecap="round"/>
+  <path d="M256 160L216 200" stroke="#6366F1" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M256 160L296 200" stroke="#6366F1" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
+</svg> 

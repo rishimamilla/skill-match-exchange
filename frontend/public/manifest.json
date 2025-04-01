@@ -1,0 +1,27 @@
+{
+  "short_name": "SkillMatch",
+  "name": "SkillMatch - Connect, Learn, and Exchange Skills",
+  "icons": [
+    {
+      "src": "logo.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ],
+  "start_url": ".",
+  "display": "standalone",
+  "theme_color": "#6366F1",
+  "background_color": "#F8FAFC",
+  "prefer_related_applications": false,
+  "orientation": "portrait",
+  "categories": ["education", "social"],
+  "screenshots": [],
+  "shortcuts": [],
+  "description": "Connect with others to learn and exchange skills",
+  "dir": "ltr",
+  "lang": "en",
+  "iarc_rating_id": "e84b072d-71b3-4d3e-86ae-31a8ce4e53b7",
+  "scope": "/",
+  "display_override": ["window-controls-overlay"],
+  "color_schemes": ["light", "dark"]
+}
