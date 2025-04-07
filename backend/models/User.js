@@ -66,6 +66,14 @@ const UserSchema = new mongoose.Schema({
       enum: ["teaching", "learning"],
       required: true,
     },
+    category: {
+      type: String,
+      enum: [
+        'Programming', 'Design', 'Marketing', 'Business', 'Language', 
+        'Music', 'Art', 'Sports', 'Cooking', 'Other'
+      ],
+      default: 'Other'
+    },
     description: {
       type: String,
       maxlength: [500, "Description cannot be more than 500 characters"],

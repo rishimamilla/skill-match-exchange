@@ -6,6 +6,7 @@ const skillSchema = new mongoose.Schema({
     required: [true, 'Please add a skill name'],
     unique: true,
     trim: true,
+    index: true,
   },
   category: {
     type: String,
@@ -22,6 +23,7 @@ const skillSchema = new mongoose.Schema({
       'Cooking',
       'Other'
     ],
+    index: true,
   },
   description: {
     type: String,
@@ -32,6 +34,7 @@ const skillSchema = new mongoose.Schema({
     type: String,
     required: [true, 'Please add difficulty level'],
     enum: ['Beginner', 'Intermediate', 'Advanced', 'Expert'],
+    index: true,
   },
   prerequisites: [{
     type: String,
@@ -132,16 +135,63 @@ const skillSchema = new mongoose.Schema({
   timestamps: true,
 });
 
-// Index for search functionality
+// Add text search index
 skillSchema.index({
   name: 'text',
   description: 'text',
   category: 'text',
-  tags: 'text',
+  'subcategories': 'text',
+  'tags': 'text'
+}, {
+  weights: {
+    name: 10,
+    category: 5,
+    description: 3,
+    subcategories: 2,
+    tags: 2
+  },
+  name: 'skill_search_index'
 });
 
-// Additional indexes for faster searches
-skillSchema.index({ category: 1 });
-skillSchema.index({ difficulty: 1 });
+// Add compound index for common queries
+skillSchema.index({ category: 1, difficulty: 1, popularity: -1 });
+
+// Add method to calculate search relevance score
+skillSchema.methods.calculateSearchScore = function(searchTerms) {
+  let score = 0;
+  const searchTermsArray = searchTerms.toLowerCase().split(' ');
+  
+  // Check name matches (highest weight)
+  searchTermsArray.forEach(term => {
+    if (this.name.toLowerCase().includes(term)) score += 10;
+    if (this.name.toLowerCase() === term) score += 20; // Exact match bonus
+  });
+  
+  // Check category matches
+  searchTermsArray.forEach(term => {
+    if (this.category.toLowerCase().includes(term)) score += 5;
+    if (this.category.toLowerCase() === term) score += 10; // Exact match bonus
+  });
+  
+  // Check description matches
+  searchTermsArray.forEach(term => {
+    if (this.description.toLowerCase().includes(term)) score += 3;
+  });
+  
+  // Check subcategories and tags
+  searchTermsArray.forEach(term => {
+    this.subcategories?.forEach(subcat => {
+      if (subcat.toLowerCase().includes(term)) score += 2;
+    });
+    this.tags?.forEach(tag => {
+      if (tag.toLowerCase().includes(term)) score += 2;
+    });
+  });
+  
+  // Add popularity bonus
+  score += Math.min(this.popularity / 10, 5);
+  
+  return score;
+};
 
 module.exports = mongoose.model("Skill", skillSchema);

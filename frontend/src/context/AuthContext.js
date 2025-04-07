@@ -39,6 +39,7 @@ export const AuthProvider = ({ children }) => {
 
   const register = async (formData) => {
     try {
+      setLoading(true);
       const response = await axios.post(`${API_URL}/auth/register`, formData);
       const { token, user } = response.data;
       
@@ -46,12 +47,14 @@ export const AuthProvider = ({ children }) => {
       setUser(user);
       setIsAuthenticated(true);
       
-      toast.success('Registration successful! Please login to continue.');
+      toast.success('Registration successful! You are now logged in.');
       return true;
     } catch (error) {
       const message = error.response?.data?.message || 'Registration failed';
       toast.error(message);
       return false;
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -89,17 +92,37 @@ export const AuthProvider = ({ children }) => {
   const updateProfile = async (formData) => {
     try {
       const token = localStorage.getItem('token');
+      
+      // Determine if this is a file upload or a data update
+      const isFileUpload = formData instanceof FormData && formData.has('profilePicture');
+      
+      // Set the appropriate content type
+      const headers = {
+        Authorization: `Bearer ${token}`
+      };
+      
+      // Convert FormData to JSON if it's not a file upload
+      let data = formData;
+      if (!isFileUpload && formData instanceof FormData) {
+        const jsonData = {};
+        for (const [key, value] of formData.entries()) {
+          jsonData[key] = value;
+        }
+        data = jsonData;
+        headers['Content-Type'] = 'application/json';
+      }
+      
+      console.log('Updating profile with data:', isFileUpload ? 'FormData with file' : data);
+      
       const response = await axios.put(
         `${API_URL}/auth/profile`,
-        formData,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'multipart/form-data'
-          }
-        }
+        data,
+        { headers }
       );
       
+      console.log('Profile update response:', response.data);
+      
+      // Update the user state with the new data
       setUser({
         ...response.data,
         interests: response.data.interests || [],
@@ -110,6 +133,7 @@ export const AuthProvider = ({ children }) => {
       toast.success('Profile updated successfully');
       return true;
     } catch (error) {
+      console.error('Profile update error:', error);
       const message = error.response?.data?.message || 'Profile update failed';
       toast.error(message);
       return false;
@@ -118,6 +142,7 @@ export const AuthProvider = ({ children }) => {
 
   const value = {
     user,
+    setUser,
     loading,
     isAuthenticated,
     register,

@@ -6,6 +6,7 @@ import Achievements from '../components/profile/Achievements';
 import SkillsAndEndorsements from '../components/profile/SkillsAndEndorsements';
 import { updateProfile } from '../api/authAPI';
 import { toast } from 'react-hot-toast';
+import { getStaticFileUrl } from '../config';
 
 const ProfilePage = () => {
   const { user, setUser } = useAuth();
@@ -18,13 +19,11 @@ const ProfilePage = () => {
     achievements: user?.achievements || [],
     skills: user?.skills || [],
     endorsements: user?.endorsements || [],
+    profilePicture: null
   });
   const [isEditing, setIsEditing] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
-  const [success, setSuccess] = useState(false);
-  const [profilePicture, setProfilePicture] = useState(null);
-  const [previewUrl, setPreviewUrl] = useState(user?.profilePicture || null);
+  const [previewUrl, setPreviewUrl] = useState(getStaticFileUrl(user?.profilePicture));
 
   useEffect(() => {
     if (user) {
@@ -37,8 +36,9 @@ const ProfilePage = () => {
         achievements: user.achievements || [],
         skills: user.skills || [],
         endorsements: user.endorsements || [],
+        profilePicture: null
       });
-      setPreviewUrl(user.profilePicture || null);
+      setPreviewUrl(getStaticFileUrl(user.profilePicture));
     }
   }, [user]);
 
@@ -58,9 +58,18 @@ const ProfilePage = () => {
     }));
   };
 
-  const handleProfilePictureUpload = (file, preview) => {
-    setProfilePicture(file);
-    setPreviewUrl(preview);
+  const handleProfilePictureUpload = async (file) => {
+    setLoading(true);
+    try {
+      const formData = new FormData();
+      formData.append('profilePicture', file);
+      await updateProfile(formData);
+      setPreviewUrl(getStaticFileUrl(file));
+    } catch (error) {
+      console.error('Error uploading profile picture:', error);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleSkillsUpdate = (action) => {
@@ -70,18 +79,21 @@ const ProfilePage = () => {
           ...prev,
           skills: [...(prev.skills || []), action.payload],
         }));
+        toast.success('Skill added successfully');
         break;
       case 'DELETE_SKILL':
         setFormData((prev) => ({
           ...prev,
           skills: (prev.skills || []).filter((skill) => skill._id !== action.payload),
         }));
+        toast.success('Skill removed successfully');
         break;
       case 'ADD_ENDORSEMENT':
         setFormData((prev) => ({
           ...prev,
           endorsements: [...(prev.endorsements || []), action.payload],
         }));
+        toast.success('Endorsement added successfully');
         break;
       default:
         break;
@@ -90,7 +102,7 @@ const ProfilePage = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (loading) return; // Prevent double submission
+    if (loading) return;
     
     setLoading(true);
     try {
@@ -107,23 +119,37 @@ const ProfilePage = () => {
       formDataToSend.append('endorsements', JSON.stringify(formData.endorsements || []));
       
       // Add profile picture if changed
-      if (profilePicture) {
-        formDataToSend.append('profilePicture', profilePicture);
+      if (formData.profilePicture) {
+        formDataToSend.append('profilePicture', formData.profilePicture);
       }
 
-      const success = await updateProfile(formDataToSend);
-      if (success) {
-        setProfilePicture(null);
-        setPreviewUrl(user?.profilePicture || null);
+      const updatedUser = await updateProfile(formDataToSend);
+      if (updatedUser) {
+        setUser(updatedUser);
+        setFormData({
+          ...formData,
+          profilePicture: null
+        });
+        setPreviewUrl(getStaticFileUrl(updatedUser.profilePicture));
         setIsEditing(false);
-        setSuccess(true);
+        toast.success('Profile updated successfully');
       }
     } catch (error) {
       console.error('Error updating profile:', error);
-      setError(error.response?.data?.message || 'Failed to update profile');
+      toast.error(error.response?.data?.message || 'Failed to update profile');
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleCancel = () => {
+    setIsEditing(false);
+    setFormData({
+      ...formData,
+      profilePicture: null
+    });
+    setPreviewUrl(getStaticFileUrl(user?.profilePicture));
+    toast.success('Changes discarded');
   };
 
   return (
@@ -142,18 +168,6 @@ const ProfilePage = () => {
             </button>
           )}
         </div>
-
-        {error && (
-          <div className="mb-4 p-4 bg-red-50 text-red-700 rounded-md">
-            {error}
-          </div>
-        )}
-
-        {success && (
-          <div className="mb-4 p-4 bg-green-50 text-green-700 rounded-md">
-            Profile updated successfully!
-          </div>
-        )}
 
         <form onSubmit={handleSubmit} className="space-y-6">
           <div className="flex flex-col items-center">
@@ -259,11 +273,7 @@ const ProfilePage = () => {
             <div className="flex justify-end space-x-3">
               <button
                 type="button"
-                onClick={() => {
-                  setIsEditing(false);
-                  setProfilePicture(null);
-                  setPreviewUrl(user?.profilePicture || null);
-                }}
+                onClick={handleCancel}
                 className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-gray-300 dark:border-gray-600 dark:hover:bg-gray-600"
               >
                 Cancel

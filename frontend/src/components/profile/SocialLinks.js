@@ -1,4 +1,5 @@
 import React from 'react';
+import { toast } from 'react-hot-toast';
 
 const SocialLinks = ({ links, onUpdate }) => {
   const handleChange = (platform, value) => {
@@ -6,6 +7,7 @@ const SocialLinks = ({ links, onUpdate }) => {
       ...links,
       [platform]: value,
     });
+    toast.success(`${platform} link updated successfully`);
   };
 
   return (
