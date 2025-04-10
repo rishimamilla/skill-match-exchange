@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import io from 'socket.io-client';
 import { getChats, getChatById, createChat, sendMessage } from '../api/chatAPI';
+import { useAuth } from '../context/AuthContext';
 
 const ChatContext = createContext(null);
 const SOCKET_URL = process.env.REACT_APP_SOCKET_URL || 'http://localhost:5000';
@@ -11,6 +12,8 @@ export const ChatProvider = ({ children }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [socket, setSocket] = useState(null);
+  const [onlineUsers, setOnlineUsers] = useState([]);
+  const { user } = useAuth();
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -25,7 +28,14 @@ export const ChatProvider = ({ children }) => {
   }, []);
 
   useEffect(() => {
-    if (socket) {
+    if (socket && user) {
+      // Notify server that user is online
+      socket.emit('userOnline', user._id);
+
+      socket.on('onlineUsers', (users) => {
+        setOnlineUsers(users);
+      });
+
       socket.on('message', (message) => {
         setChats((prevChats) => {
           const chatIndex = prevChats.findIndex((c) => c._id === message.chatId);
@@ -38,7 +48,7 @@ export const ChatProvider = ({ children }) => {
         });
       });
     }
-  }, [socket]);
+  }, [socket, user]);
 
   const fetchChats = useCallback(async () => {
     setLoading(true);
@@ -101,6 +111,7 @@ export const ChatProvider = ({ children }) => {
     currentChat,
     loading,
     error,
+    onlineUsers,
     fetchChats,
     fetchChatById,
     startChat,

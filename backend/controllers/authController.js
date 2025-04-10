@@ -3,6 +3,8 @@ const jwt = require("jsonwebtoken");
 const User = require("../models/User");
 const { validationResult } = require('express-validator');
 const upload = require('../middleware/uploadMiddleware');
+const path = require('path');
+const fs = require('fs');
 
 // Generate JWT Token
 const generateToken = (id) => {
@@ -68,8 +70,7 @@ exports.login = async (req, res) => {
 
     // Check for user and select only necessary fields
     const user = await User.findOne({ email })
-      .select('+password name email profilePicture location')
-      .lean();
+      .select('+password name email profilePicture location');
 
     if (!user) {
       return res.status(401).json({ message: 'Invalid credentials' });
@@ -84,17 +85,18 @@ exports.login = async (req, res) => {
     // Create token
     const token = generateToken(user._id);
 
-    // Remove password from response
-    delete user.password;
+    // Convert user to plain object and remove password
+    const userObject = user.toObject();
+    delete userObject.password;
 
     res.json({
       token,
       user: {
-        _id: user._id,
-        name: user.name,
-        email: user.email,
-        profilePicture: user.profilePicture,
-        location: user.location
+        _id: userObject._id,
+        name: userObject.name,
+        email: userObject.email,
+        profilePicture: userObject.profilePicture,
+        location: userObject.location
       }
     });
   } catch (error) {
@@ -167,40 +169,43 @@ exports.updateProfile = async (req, res) => {
 
     // Update profile picture if a new one is uploaded
     if (req.file) {
-      const filePath = req.file.path.replace(/\\/g, '/');
-      user.profilePicture = filePath.replace('uploads', '');
+      console.log('File uploaded:', req.file);
+      
+      // Remove old profile picture if it exists and is not the default avatar
+      if (user.profilePicture && !user.profilePicture.includes('default-avatar.png')) {
+        const oldImagePath = path.join(__dirname, '..', user.profilePicture);
+        if (fs.existsSync(oldImagePath)) {
+          fs.unlinkSync(oldImagePath);
+        }
+      }
+      
+      // Store the path relative to the uploads directory
+      user.profilePicture = `/uploads/profiles/${req.file.filename}`;
+      console.log('New profile picture path:', user.profilePicture);
     }
 
     // Save the updated user
     await user.save();
-
-    // Return the updated user data
-    res.json({
+    
+    // Return the updated user without the password
+    const updatedUser = {
       _id: user._id,
       name: user.name,
       email: user.email,
-      profilePicture: user.profilePicture,
       location: user.location,
       bio: user.bio,
+      profilePicture: user.profilePicture,
       interests: user.interests,
       skills: user.skills,
-      endorsements: user.endorsements
-    });
+      endorsements: user.endorsements,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt
+    };
+    
+    res.json(updatedUser);
   } catch (error) {
     console.error('Profile update error:', error);
-    if (error.name === 'ValidationError') {
-      return res.status(400).json({ 
-        message: 'Validation error',
-        errors: Object.values(error.errors).map(err => err.message)
-      });
-    }
-    if (error.code === 11000) {
-      return res.status(400).json({ message: 'Email is already taken' });
-    }
-    res.status(500).json({ 
-      message: 'Server error while updating profile',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
+    res.status(500).json({ message: 'Server error' });
   }
 };
 

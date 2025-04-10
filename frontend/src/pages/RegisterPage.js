@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { motion } from 'framer-motion';
 import { FiUser, FiMail, FiLock, FiMapPin, FiLoader } from 'react-icons/fi';
+import { toast } from 'react-hot-toast';
 
 const RegisterPage = () => {
   const navigate = useNavigate();
@@ -63,7 +64,7 @@ const RegisterPage = () => {
     try {
       const success = await register(formData);
       if (success) {
-        navigate('/login', { replace: true });
+        navigate('/dashboard', { replace: true });
       }
     } catch (err) {
       setError(err.message || 'Registration failed. Please try again.');
@@ -93,6 +94,12 @@ const RegisterPage = () => {
             </Link>
           </p>
         </div>
+
+        {error && (
+          <div className="bg-red-50 dark:bg-red-900/50 text-red-600 dark:text-red-400 p-4 rounded-md">
+            {error}
+          </div>
+        )}
 
         <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
           <div className="rounded-md shadow-sm -space-y-px">
@@ -198,10 +205,6 @@ const RegisterPage = () => {
             </div>
           </div>
 
-          {error && (
-            <div className="text-red-500 text-sm text-center">{error}</div>
-          )}
-
           <div>
             <button
               type="submit"
@@ -211,7 +214,7 @@ const RegisterPage = () => {
               {loading ? (
                 <FiLoader className="animate-spin h-5 w-5" />
               ) : (
-                'Create Account'
+                'Register'
               )}
             </button>
           </div>

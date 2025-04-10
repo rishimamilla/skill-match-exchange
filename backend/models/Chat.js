@@ -14,34 +14,26 @@ const messageSchema = new mongoose.Schema({
     type: Date,
     default: Date.now,
   },
-  readBy: [{
-    type: mongoose.Schema.Types.ObjectId,
-    ref: "User",
-  }],
+  read: {
+    type: Boolean,
+    default: false,
+  },
 });
 
 const chatSchema = new mongoose.Schema({
   participants: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: "User",
-    required: true,
   }],
   messages: [messageSchema],
   lastMessage: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: "Message",
-  },
-  isActive: {
-    type: Boolean,
-    default: true,
-  },
-  createdAt: {
     type: Date,
     default: Date.now,
   },
-  updatedAt: {
-    type: Date,
-    default: Date.now,
+  unreadCount: {
+    type: Map,
+    of: Number,
+    default: new Map(),
   },
 }, {
   timestamps: true,
@@ -49,6 +41,6 @@ const chatSchema = new mongoose.Schema({
 
 // Index for faster queries
 chatSchema.index({ participants: 1 });
-chatSchema.index({ updatedAt: -1 });
+chatSchema.index({ lastMessage: -1 });
 
 module.exports = mongoose.model("Chat", chatSchema);

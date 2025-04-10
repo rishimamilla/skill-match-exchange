@@ -1,39 +1,29 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { useAuth } from '../context/AuthContext';
+import React, { useState, useEffect } from 'react';
+import { motion } from 'framer-motion';
+import { FiUser, FiCircle, FiMessageSquare, FiSearch } from 'react-icons/fi';
 import { useChat } from '../context/ChatContext';
+import { useAuth } from '../context/AuthContext';
+import { toast } from 'react-toastify';
 
 const ChatPage = () => {
   const { user } = useAuth();
-  const {
-    chats,
-    currentChat,
-    loading,
-    error,
-    fetchChats,
-    fetchChatById,
-    sendChatMessage,
-    setCurrentChat,
+  const { 
+    chats, 
+    currentChat, 
+    loading, 
+    error, 
+    onlineUsers,
+    fetchChats, 
+    fetchChatById, 
+    startChat, 
+    sendChatMessage 
   } = useChat();
   const [message, setMessage] = useState('');
-  const messagesEndRef = useRef(null);
+  const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
     fetchChats();
-  }, [fetchChats]);
-
-  useEffect(() => {
-    if (currentChat) {
-      fetchChatById(currentChat._id);
-    }
-  }, [currentChat, fetchChatById]);
-
-  useEffect(() => {
-    scrollToBottom();
-  }, [currentChat?.messages]);
-
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
+  }, []);
 
   const handleSendMessage = async (e) => {
     e.preventDefault();
@@ -43,139 +33,156 @@ const ChatPage = () => {
       await sendChatMessage(currentChat._id, message);
       setMessage('');
     } catch (err) {
-      console.error('Failed to send message:', err);
+      toast.error('Failed to send message');
     }
   };
 
-  const formatTime = (timestamp) => {
-    return new Date(timestamp).toLocaleTimeString([], {
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  };
+  const filteredChats = chats.filter(chat => {
+    const otherUser = chat.participants.find(p => p._id !== user._id);
+    return otherUser.name.toLowerCase().includes(searchQuery.toLowerCase());
+  });
 
-  if (loading) return <div>Loading...</div>;
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
+      </div>
+    );
+  }
 
   return (
-    <div className="flex h-[calc(100vh-200px)]">
-      {/* Chat List */}
-      <div className="w-1/3 border-r dark:border-gray-700 overflow-y-auto">
-        <div className="p-4">
-          <h2 className="text-xl font-semibold mb-4">Conversations</h2>
-          {chats.map((chat) => {
-            const otherParticipant = chat.participants.find(
-              (p) => p._id !== user._id
-            );
-            const lastMessage = chat.messages[chat.messages.length - 1];
-            const unreadCount = chat.messages.filter(
-              (m) => !m.readBy.includes(user._id) && m.sender !== user._id
-            ).length;
-
-            return (
-              <div
-                key={chat._id}
-                onClick={() => setCurrentChat(chat)}
-                className={`p-4 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 ${
-                  currentChat?._id === chat._id
-                    ? 'bg-blue-50 dark:bg-blue-900'
-                    : ''
-                }`}
-              >
-                <div className="flex justify-between items-start">
-                  <div>
-                    <h3 className="font-semibold">{otherParticipant.name}</h3>
-                    <p className="text-sm text-gray-600 dark:text-gray-400 truncate">
-                      {lastMessage?.content || 'No messages yet'}
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-xs text-gray-500 dark:text-gray-400">
-                      {lastMessage
-                        ? formatTime(lastMessage.timestamp)
-                        : formatTime(chat.createdAt)}
-                    </p>
-                    {unreadCount > 0 && (
-                      <span className="bg-blue-600 text-white text-xs rounded-full px-2 py-1">
-                        {unreadCount}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Chat Window */}
-      <div className="flex-1 flex flex-col">
-        {currentChat ? (
-          <>
-            {/* Chat Header */}
-            <div className="p-4 border-b dark:border-gray-700">
-              <h2 className="text-xl font-semibold">
-                {currentChat.participants
-                  .find((p) => p._id !== user._id)
-                  .name}
-              </h2>
-            </div>
-
-            {/* Messages */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-4">
-              {currentChat.messages.map((msg) => (
+    <div className="min-h-screen bg-gray-50 pt-16">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+          {/* Online Users Section */}
+          <div className="bg-white rounded-lg shadow-md p-4">
+            <h2 className="text-lg font-semibold text-gray-900 mb-4">Online Users</h2>
+            <div className="space-y-2">
+              {onlineUsers.map((onlineUser) => (
                 <div
-                  key={msg._id}
-                  className={`flex ${
-                    msg.sender === user._id ? 'justify-end' : 'justify-start'
-                  }`}
+                  key={onlineUser._id}
+                  className="flex items-center space-x-2 p-2 hover:bg-gray-50 rounded-lg cursor-pointer"
+                  onClick={() => startChat(onlineUser._id)}
                 >
-                  <div
-                    className={`max-w-[70%] rounded-lg p-3 ${
-                      msg.sender === user._id
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-gray-200 dark:bg-gray-700'
-                    }`}
-                  >
-                    <p>{msg.content}</p>
-                    <p
-                      className={`text-xs mt-1 ${
-                        msg.sender === user._id
-                          ? 'text-blue-100'
-                          : 'text-gray-500 dark:text-gray-400'
-                      }`}
-                    >
-                      {formatTime(msg.timestamp)}
-                    </p>
-                  </div>
+                  <FiCircle className="text-green-500" />
+                  <span className="text-gray-700">{onlineUser.name}</span>
                 </div>
               ))}
-              <div ref={messagesEndRef} />
             </div>
+          </div>
 
-            {/* Message Input */}
-            <form onSubmit={handleSendMessage} className="p-4 border-t dark:border-gray-700">
-              <div className="flex gap-2">
+          {/* Chat List */}
+          <div className="bg-white rounded-lg shadow-md p-4">
+            <div className="mb-4">
+              <div className="relative">
+                <FiSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
                 <input
                   type="text"
-                  value={message}
-                  onChange={(e) => setMessage(e.target.value)}
-                  placeholder="Type a message..."
-                  className="flex-1 rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                  placeholder="Search chats..."
+                  className="w-full pl-10 pr-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
                 />
-                <button
-                  type="submit"
-                  className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"
-                >
-                  Send
-                </button>
               </div>
-            </form>
-          </>
-        ) : (
-          <div className="flex-1 flex items-center justify-center text-gray-500 dark:text-gray-400">
-            Select a conversation to start chatting
+            </div>
+            <div className="space-y-2">
+              {filteredChats.map((chat) => {
+                const otherUser = chat.participants.find(p => p._id !== user._id);
+                const isOnline = onlineUsers.some(u => u._id === otherUser._id);
+                return (
+                  <div
+                    key={chat._id}
+                    className={`flex items-center space-x-2 p-2 rounded-lg cursor-pointer ${
+                      currentChat?._id === chat._id ? 'bg-indigo-50' : 'hover:bg-gray-50'
+                    }`}
+                    onClick={() => fetchChatById(chat._id)}
+                  >
+                    <div className="relative">
+                      <FiUser className="text-gray-400" />
+                      {isOnline && (
+                        <FiCircle className="absolute -bottom-1 -right-1 text-green-500 text-xs" />
+                      )}
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-gray-900">{otherUser.name}</p>
+                      <p className="text-sm text-gray-500 truncate">
+                        {chat.lastMessage?.content || 'No messages yet'}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
-        )}
+
+          {/* Chat Messages */}
+          <div className="md:col-span-2 bg-white rounded-lg shadow-md">
+            {currentChat ? (
+              <div className="flex flex-col h-[600px]">
+                {/* Chat Header */}
+                <div className="p-4 border-b">
+                  <h2 className="text-lg font-semibold text-gray-900">
+                    {currentChat.participants.find(p => p._id !== user._id).name}
+                  </h2>
+                </div>
+
+                {/* Messages */}
+                <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                  {currentChat.messages.map((message) => (
+                    <div
+                      key={message._id}
+                      className={`flex ${
+                        message.sender._id === user._id ? 'justify-end' : 'justify-start'
+                      }`}
+                    >
+                      <div
+                        className={`max-w-xs rounded-lg p-3 ${
+                          message.sender._id === user._id
+                            ? 'bg-indigo-600 text-white'
+                            : 'bg-gray-100 text-gray-900'
+                        }`}
+                      >
+                        <p>{message.content}</p>
+                        <p className="text-xs mt-1 opacity-70">
+                          {new Date(message.createdAt).toLocaleTimeString()}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Message Input */}
+                <form onSubmit={handleSendMessage} className="p-4 border-t">
+                  <div className="flex space-x-2">
+                    <input
+                      type="text"
+                      value={message}
+                      onChange={(e) => setMessage(e.target.value)}
+                      placeholder="Type a message..."
+                      className="flex-1 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                    <button
+                      type="submit"
+                      className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    >
+                      Send
+                    </button>
+                  </div>
+                </form>
+              </div>
+            ) : (
+              <div className="flex items-center justify-center h-[600px]">
+                <div className="text-center">
+                  <FiMessageSquare className="mx-auto h-12 w-12 text-gray-400" />
+                  <h3 className="mt-2 text-sm font-medium text-gray-900">No chat selected</h3>
+                  <p className="mt-1 text-sm text-gray-500">
+                    Select a chat from the list to start messaging
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );

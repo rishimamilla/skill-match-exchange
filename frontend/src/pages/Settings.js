@@ -3,13 +3,15 @@ import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { FiMoon, FiSun, FiBell, FiLock, FiUser, FiGlobe } from 'react-icons/fi';
 import { toast } from 'react-hot-toast';
+import ProfilePictureUpload from '../components/profile/ProfilePictureUpload';
 
 const Settings = () => {
-  const { user } = useAuth();
+  const { user, updateProfile } = useAuth();
   const { isDarkMode, toggleTheme } = useTheme();
   const [emailNotifications, setEmailNotifications] = useState(true);
   const [profileVisibility, setProfileVisibility] = useState('public');
   const [language, setLanguage] = useState('en');
+  const [loading, setLoading] = useState(false);
 
   const handleEmailNotificationsChange = async (e) => {
     setEmailNotifications(e.target.checked);
@@ -44,6 +46,30 @@ const Settings = () => {
     }
   };
 
+  const handleProfilePictureUpload = async (file) => {
+    if (!file) return;
+    
+    setLoading(true);
+    try {
+      const formData = new FormData();
+      formData.append('profilePicture', file);
+      
+      // Log the file being uploaded
+      console.log('Uploading file:', file.name, file.type, file.size);
+      
+      const success = await updateProfile(formData);
+      
+      if (success) {
+        toast.success('Profile picture updated successfully');
+      }
+    } catch (error) {
+      console.error('Error uploading profile picture:', error);
+      toast.error(error.message || 'Failed to update profile picture');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="max-w-4xl mx-auto px-4 py-8">
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
@@ -56,21 +82,17 @@ const Settings = () => {
             Profile Information
           </h2>
           
-          {/* Profile Picture Display */}
+          {/* Profile Picture Upload */}
           <div className="flex flex-col items-center mb-6">
-            <div className="relative">
-              {user?.profilePicture ? (
-                <img
-                  src={`${process.env.REACT_APP_API_URL}${user.profilePicture}`}
-                  alt="Profile"
-                  className="h-32 w-32 rounded-full object-cover"
-                />
-              ) : (
-                <div className="h-32 w-32 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center">
-                  <FiUser className="h-16 w-16 text-gray-400" />
-                </div>
-              )}
-            </div>
+            <ProfilePictureUpload 
+              onUpload={handleProfilePictureUpload}
+              previewUrl={user?.profilePicture || null}
+            />
+            {loading && (
+              <div className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+                Uploading...
+              </div>
+            )}
           </div>
 
           <div className="space-y-4">
@@ -203,6 +225,7 @@ const Settings = () => {
               <option value="es">Spanish</option>
               <option value="fr">French</option>
               <option value="de">German</option>
+              <option value="zh">Chinese</option>
             </select>
           </div>
         </div>

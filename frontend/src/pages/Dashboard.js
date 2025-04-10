@@ -36,19 +36,20 @@ const Dashboard = () => {
       
       // Fetch matches
       const matches = await skillAPI.getSkillMatches(user._id);
-      const totalMatches = matches.length;
+      const totalMatches = matches?.length || 0;
 
       // Calculate skills learned and taught
-      const skillsLearned = user.skills?.filter(skill => skill.status === 'learning').length || 0;
-      const skillsTaught = user.skills?.filter(skill => skill.status === 'teaching').length || 0;
+      const userSkills = user?.skills || [];
+      const skillsLearned = userSkills.filter(skill => skill.status === 'learning').length;
+      const skillsTaught = userSkills.filter(skill => skill.status === 'teaching').length;
 
       // Update stats
       setStats({
         totalMatches,
-        activeChats: activeChats.length,
+        activeChats: activeChats?.length || 0,
         skillsLearned,
         skillsTaught,
-        achievements: user.achievements?.length || 0,
+        achievements: user?.achievements?.length || 0
       });
 
       // Process recent activity from matches
@@ -88,17 +89,15 @@ const Dashboard = () => {
       setRecentAchievements(achievements);
 
       // Process top skills
-      const userSkills = user.skills?.map(skill => ({
-        name: skill.skill,
-        status: skill.status,
-        rating: skill.rating || 0,
-        matches: matches.filter(match => 
-          match.user.skills.some(s => s.skill === skill.skill && s.status !== skill.status)
-        ).length,
-      })) || [];
-
-      // Sort by matches and rating
-      const sortedSkills = userSkills
+      const topSkillsData = userSkills
+        .map(skill => ({
+          name: skill.skill,
+          status: skill.status,
+          rating: skill.rating || 0,
+          matches: matches.filter(match => 
+            match.user.skills.some(s => s.skill === skill.skill && s.status !== skill.status)
+          ).length,
+        }))
         .sort((a, b) => {
           if (b.matches !== a.matches) {
             return b.matches - a.matches;
@@ -107,7 +106,7 @@ const Dashboard = () => {
         })
         .slice(0, 5);
 
-      setTopSkills(sortedSkills);
+      setTopSkills(topSkillsData);
     } catch (error) {
       console.error('Error fetching dashboard data:', error);
       toast.error('Failed to update dashboard data');

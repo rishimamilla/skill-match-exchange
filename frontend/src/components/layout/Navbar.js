@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { FiHome, FiUsers, FiMessageSquare, FiLogOut, FiUser, FiSun, FiMoon, FiBell, FiSearch, FiHelpCircle, FiInfo } from 'react-icons/fi';
 import { motion } from 'framer-motion';
+import { getStaticFileUrl } from '../../config';
 
 const Navbar = () => {
   const { user, logout } = useAuth();
@@ -29,19 +30,7 @@ const Navbar = () => {
   };
 
   const getProfilePictureUrl = () => {
-    if (user?.profilePicture) {
-      // If it's a data URL (base64), return it directly
-      if (user.profilePicture.startsWith('data:')) {
-        return user.profilePicture;
-      }
-      // If it's a relative URL, add the API URL
-      if (user.profilePicture.startsWith('/')) {
-        return `${process.env.REACT_APP_API_URL}${user.profilePicture}`;
-      }
-      // If it's already a full URL, return it
-      return user.profilePicture;
-    }
-    return '/default-avatar.png';
+    return getStaticFileUrl(user?.profilePicture) || '/default-avatar.png';
   };
 
   return (
@@ -203,9 +192,9 @@ const Navbar = () => {
                 </Link>
                 <Link
                   to="/register"
-                  className="bg-indigo-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-indigo-700 transition-colors"
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-md text-sm font-medium"
                 >
-                  Sign Up
+                  Register
                 </Link>
               </div>
             )}

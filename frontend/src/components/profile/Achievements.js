@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { toast } from 'react-hot-toast';
 
 const AchievementForm = ({ onAdd, onCancel }) => {
   const [formData, setFormData] = useState({
@@ -20,6 +21,7 @@ const AchievementForm = ({ onAdd, onCancel }) => {
       date: '',
       icon: '🏆',
     });
+    toast.success('Achievement added successfully');
   };
 
   return (
@@ -124,6 +126,7 @@ const Achievements = ({ achievements, onUpdate }) => {
   const handleDelete = (index) => {
     const newAchievements = achievements.filter((_, i) => i !== index);
     onUpdate(newAchievements);
+    toast.success('Achievement removed successfully');
   };
 
   return (
@@ -149,43 +152,45 @@ const Achievements = ({ achievements, onUpdate }) => {
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="space-y-4">
         {achievements.map((achievement, index) => (
           <div
             key={index}
-            className="relative p-4 bg-white dark:bg-gray-800 rounded-lg shadow"
+            className="p-4 bg-white dark:bg-gray-700 rounded-lg shadow"
           >
-            <button
-              onClick={() => handleDelete(index)}
-              className="absolute top-2 right-2 text-gray-400 hover:text-red-500"
-            >
-              <svg
-                className="w-5 h-5"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M6 18L18 6M6 6l12 12"
-                />
-              </svg>
-            </button>
-            <div className="flex items-start space-x-3">
-              <span className="text-2xl">{achievement.icon}</span>
-              <div>
-                <h4 className="text-lg font-medium text-gray-900 dark:text-white">
-                  {achievement.title}
-                </h4>
-                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                  {achievement.description}
-                </p>
-                <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
-                  {new Date(achievement.date).toLocaleDateString()}
-                </p>
+            <div className="flex justify-between items-start">
+              <div className="flex items-start space-x-3">
+                <span className="text-2xl">{achievement.icon}</span>
+                <div>
+                  <h4 className="text-lg font-medium text-gray-900 dark:text-white">
+                    {achievement.title}
+                  </h4>
+                  <p className="text-gray-500 dark:text-gray-400">
+                    {achievement.description}
+                  </p>
+                  <p className="text-sm text-gray-400 dark:text-gray-500">
+                    {new Date(achievement.date).toLocaleDateString()}
+                  </p>
+                </div>
               </div>
+              <button
+                onClick={() => handleDelete(index)}
+                className="text-red-500 hover:text-red-700 dark:hover:text-red-400"
+              >
+                <svg
+                  className="w-5 h-5"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                  />
+                </svg>
+              </button>
             </div>
           </div>
         ))}
