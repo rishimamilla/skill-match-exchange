@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { FiPlus, FiX, FiEdit2, FiStar, FiClock, FiTag } from 'react-icons/fi';
+import { FiPlus, FiX, FiEdit2, FiStar, FiClock, FiTag, FiUsers, FiSearch, FiFilter } from 'react-icons/fi';
 import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
 import skillAPI from '../api/skillAPI';
@@ -14,11 +14,24 @@ const SkillsSection = ({ onSkillsChange }) => {
   const [editingSkill, setEditingSkill] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
+  const [matches, setMatches] = useState([]);
+  const [loadingMatches, setLoadingMatches] = useState(false);
+  const [matchFilters, setMatchFilters] = useState({
+    minRating: 0,
+    maxDistance: 100,
+    skillLevel: 'Any',
+    availability: 'Any'
+  });
+  const [showMatches, setShowMatches] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [offeringSkills, setOfferingSkills] = useState([]);
+  const [neededSkills, setNeededSkills] = useState([]);
   
   const [offeringSkill, setOfferingSkill] = useState({
     name: '',
     level: 'Beginner',
-    yearsOfExperience: 1,
+    yearsOfExperience: '',
     category: 'Other',
     description: '',
     certifications: []
@@ -27,7 +40,7 @@ const SkillsSection = ({ onSkillsChange }) => {
   const [neededSkill, setNeededSkill] = useState({
     name: '',
     level: 'Beginner',
-    yearsOfExperience: 1,
+    yearsOfExperience: '',
     category: 'Other',
     description: '',
     priority: 'Medium'
@@ -50,11 +63,68 @@ const SkillsSection = ({ onSkillsChange }) => {
     return matchesSearch && matchesCategory;
   });
 
+  // Add a useEffect to log skills when they change
+  useEffect(() => {
+    console.log('User skills updated:', user?.skills);
+    console.log('Offering skills:', skillsOffering);
+    console.log('Needed skills:', skillsNeeded);
+  }, [user?.skills, skillsOffering, skillsNeeded]);
+
+  // Fetch matches when skills change or filters change
+  useEffect(() => {
+    if (showMatches) {
+      fetchMatches();
+    }
+  }, [showMatches, matchFilters]);
+
   // Check if a skill already exists
   const isSkillExists = useCallback((skillName, type) => {
     const existingSkills = type === 'offering' ? skillsOffering : skillsNeeded;
     return existingSkills.some(s => s.skill.toLowerCase() === skillName.toLowerCase());
   }, [skillsOffering, skillsNeeded]);
+
+  // Fetch potential matches
+  const fetchMatches = async () => {
+    setLoadingMatches(true);
+    try {
+      const data = await skillAPI.getSkillMatches();
+      
+      // Apply additional filtering based on user preferences
+      const filteredMatches = data.filter(match => {
+        // Filter by minimum rating
+        if (matchFilters.minRating > 0 && (!match.rating || match.rating < matchFilters.minRating)) {
+          return false;
+        }
+        
+        // Filter by skill level if specified
+        if (matchFilters.skillLevel !== 'Any') {
+          const hasMatchingSkillLevel = match.skills.some(skill => 
+            skill.level === matchFilters.skillLevel
+          );
+          if (!hasMatchingSkillLevel) return false;
+        }
+        
+        // Filter by availability if specified
+        if (matchFilters.availability !== 'Any') {
+          if (matchFilters.availability === 'Online' && !match.isRemote) {
+            return false;
+          }
+          if (matchFilters.availability === 'In-Person' && match.isRemote) {
+            return false;
+          }
+        }
+        
+        return true;
+      });
+      
+      setMatches(filteredMatches);
+    } catch (error) {
+      console.error('Error fetching matches:', error);
+      toast.error('Failed to fetch potential matches');
+    } finally {
+      setLoadingMatches(false);
+    }
+  };
 
   // Handle skill editing
   const handleEditSkill = (skill, type) => {
@@ -81,81 +151,95 @@ const SkillsSection = ({ onSkillsChange }) => {
   };
 
   const handleAddSkill = async (type) => {
-    const skillData = type === 'offering' ? offeringSkill : neededSkill;
-    const setLoading = type === 'offering' ? setLoadingOffering : setLoadingNeeded;
-    
-    if (!skillData.name.trim()) {
-      toast.error('Please enter a skill name');
-      return;
-    }
+    setLoadingOffering(type === 'offering');
+    setLoadingNeeded(type === 'needed');
+    setError(null);
 
-    if (isSkillExists(skillData.name, type) && !editingSkill) {
-      toast.error(`You already have "${skillData.name}" in your ${type === 'offering' ? 'offering' : 'needed'} skills`);
-      return;
-    }
-
-    setLoading(true);
-    
     try {
+      const skillData = type === 'offering' ? offeringSkill : neededSkill;
+      
+      // Validate required fields
+      if (!skillData.name) {
+        throw new Error('Please enter a skill name');
+      }
+
       const dataToSend = {
         userId: user._id,
         skill: skillData.name,
         level: skillData.level,
-        yearsOfExperience: skillData.yearsOfExperience,
+        yearsOfExperience: parseInt(skillData.yearsOfExperience) || 0,
         status: type === 'offering' ? 'teaching' : 'learning',
         category: skillData.category,
-        description: skillData.description,
-        ...(type === 'offering' ? { certifications: skillData.certifications } : { priority: skillData.priority }),
-        ...(editingSkill && { _id: editingSkill._id })
+        description: skillData.description || '',
+        ...(type === 'offering' ? { certifications: skillData.certifications || [] } : { priority: skillData.priority || 'Medium' })
       };
 
-      const updatedUser = editingSkill 
-        ? await skillAPI.updateUserSkill(dataToSend)
-        : await skillAPI.addUserSkill(dataToSend);
+      // Check if this is an update or a new skill
+      const isUpdate = skillData._id;
+      if (isUpdate) {
+        dataToSend._id = skillData._id;
+      }
       
-      if (!updatedUser || !updatedUser.skills) {
+      const apiCall = isUpdate ? skillAPI.updateUserSkill : skillAPI.addUserSkill;
+
+      console.log(`${isUpdate ? 'Updating' : 'Adding'} skill:`, dataToSend);
+      const response = await apiCall(dataToSend);
+      console.log('API response:', response);
+
+      if (response && response.skills) {
+        // Update the user state with the complete skills array
+        if (typeof setUser === 'function') {
+          setUser(prevUser => ({
+            ...prevUser,
+            skills: response.skills
+          }));
+        }
+
+        // Update local skills state
+        const updatedSkills = response.skills.filter(s => s.status === dataToSend.status);
+        if (dataToSend.status === 'teaching') {
+          setOfferingSkills(updatedSkills);
+        } else {
+          setNeededSkills(updatedSkills);
+        }
+
+        // Reset form
+        if (type === 'offering') {
+          setOfferingSkill({
+            name: '',
+            level: 'Beginner',
+            yearsOfExperience: '',
+            category: 'Other',
+            description: '',
+            certifications: []
+          });
+        } else {
+          setNeededSkill({
+            name: '',
+            level: 'Beginner',
+            yearsOfExperience: '',
+            category: 'Other',
+            description: '',
+            priority: 'Medium'
+          });
+        }
+
+        // Call onSkillsChange if provided
+        if (onSkillsChange) {
+          onSkillsChange(response.skills);
+        }
+
+        toast.success(`Skill ${isUpdate ? 'updated' : 'added'} successfully!`);
+      } else {
         throw new Error('Invalid response from server');
       }
-
-      if (typeof setUser === 'function') {
-        setUser(prevUser => ({
-          ...prevUser,
-          skills: updatedUser.skills
-        }));
-      }
-      
-      if (onSkillsChange) {
-        onSkillsChange(updatedUser.skills);
-      }
-      
-      // Reset form
-      if (type === 'offering') {
-        setOfferingSkill({
-          name: '',
-          level: 'Beginner',
-          yearsOfExperience: 1,
-          category: 'Other',
-          description: '',
-          certifications: []
-        });
-      } else {
-        setNeededSkill({
-          name: '',
-          level: 'Beginner',
-          yearsOfExperience: 1,
-          category: 'Other',
-          description: '',
-          priority: 'Medium'
-        });
-      }
-      
-      setEditingSkill(null);
-      toast.success(`Successfully ${editingSkill ? 'updated' : 'added'} "${skillData.name}" to your ${type === 'offering' ? 'offering' : 'needed'} skills`);
-    } catch (error) {
-      console.error('Error managing skill:', error);
-      toast.error(error.message || `Failed to ${editingSkill ? 'update' : 'add'} skill. Please try again.`);
+    } catch (err) {
+      console.error('Error handling skill:', err);
+      setError(err.message || 'Failed to save skill');
+      toast.error(err.message || 'Failed to save skill');
     } finally {
-      setLoading(false);
+      setLoadingOffering(false);
+      setLoadingNeeded(false);
     }
   };
 
@@ -183,6 +267,11 @@ const SkillsSection = ({ onSkillsChange }) => {
       }
       
       toast.success(`Successfully removed "${skillToRemove.skill}" from your ${type === 'offering' ? 'offering' : 'needed'} skills`);
+      
+      // Refresh matches if they're being displayed
+      if (showMatches) {
+        fetchMatches();
+      }
     } catch (error) {
       console.error('Error removing skill:', error);
       toast.error(error.message || 'Failed to remove skill. Please try again.');
@@ -207,309 +296,552 @@ const SkillsSection = ({ onSkillsChange }) => {
     }
   };
 
-  const skillCategories = [
-    'All',
-    'Programming',
-    'Design',
-    'Marketing',
-    'Business',
-    'Language',
-    'Music',
-    'Art',
-    'Sports',
-    'Cooking',
-    'Other'
-  ];
+  const handleFilterChange = (e) => {
+    const { name, value } = e.target;
+    setMatchFilters(prev => ({
+      ...prev,
+      [name]: value
+    }));
+  };
 
-  const renderSkillCard = (skill, type) => (
-    <motion.div
-      key={skill._id}
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -20 }}
-      className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-4 hover:shadow-lg transition-shadow"
-    >
-      <div className="flex justify-between items-start">
-        <div>
-          <h4 className="text-lg font-semibold text-gray-900 dark:text-white">{skill.skill}</h4>
-          <div className="flex items-center space-x-2 mt-1">
-            <span className="text-sm text-gray-500 dark:text-gray-400">
-              <FiTag className="inline mr-1" />
-              {skill.category}
-            </span>
-            <span className="text-sm text-gray-500 dark:text-gray-400">
-              <FiStar className="inline mr-1" />
-              {skill.level}
-            </span>
-            <span className="text-sm text-gray-500 dark:text-gray-400">
-              <FiClock className="inline mr-1" />
-              {skill.yearsOfExperience} {skill.yearsOfExperience === 1 ? 'year' : 'years'}
-            </span>
-          </div>
-          {skill.description && (
-            <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">{skill.description}</p>
-          )}
-          {type === 'offering' && skill.certifications?.length > 0 && (
-            <div className="mt-2">
-              <h5 className="text-sm font-medium text-gray-700 dark:text-gray-300">Certifications:</h5>
-              <ul className="list-disc list-inside text-sm text-gray-600 dark:text-gray-400">
-                {skill.certifications.map((cert, index) => (
-                  <li key={index}>{cert}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-          {type === 'needed' && skill.priority && (
-            <div className="mt-2">
-              <span className={`text-sm px-2 py-1 rounded ${
-                skill.priority === 'High' ? 'bg-red-100 text-red-800' :
-                skill.priority === 'Medium' ? 'bg-yellow-100 text-yellow-800' :
-                'bg-green-100 text-green-800'
-              }`}>
-                Priority: {skill.priority}
-              </span>
-            </div>
-          )}
-        </div>
-        <div className="flex space-x-2">
-          <button
-            onClick={() => handleEditSkill(skill, type)}
-            className="p-1 text-gray-500 hover:text-indigo-600 dark:text-gray-400 dark:hover:text-indigo-400"
-            disabled={loadingSkills[skill._id]}
-          >
-            <FiEdit2 className="h-5 w-5" />
-          </button>
-          <button
-            onClick={() => handleRemoveSkill(skill, type)}
-            className="p-1 text-gray-500 hover:text-red-600 dark:text-gray-400 dark:hover:text-red-400"
-            disabled={loadingSkills[skill._id]}
-          >
-            <FiX className="h-5 w-5" />
-          </button>
-        </div>
-      </div>
-    </motion.div>
-  );
+  const getMatchScoreColor = (score) => {
+    if (score >= 8) return 'text-green-500';
+    if (score >= 5) return 'text-yellow-500';
+    return 'text-red-500';
+  };
+
+  const initiateExchange = async (matchId, matchSkills) => {
+    try {
+      // Get the skills the user wants to offer
+      const selectedSkills = skillsOffering.map(skill => skill._id);
+      
+      if (selectedSkills.length === 0) {
+        toast.error('Please add skills you want to offer before initiating an exchange');
+        return;
+      }
+      
+      // Get the skills the user wants to receive
+      const requestedSkills = matchSkills
+        .filter(skill => skillsNeeded.some(needed => needed.skill === skill.skill))
+        .map(skill => skill._id);
+      
+      if (requestedSkills.length === 0) {
+        toast.error('No matching skills found for exchange');
+        return;
+      }
+      
+      console.log('Initiating exchange with:', {
+        recipientId: matchId,
+        offeredSkillIds: selectedSkills,
+        requestedSkillIds: requestedSkills
+      });
+
+      const response = await skillAPI.initiateExchange({
+        recipientId: matchId,
+        offeredSkillIds: selectedSkills,
+        requestedSkillIds: requestedSkills
+      });
+      
+      toast.success('Exchange request sent successfully!');
+      fetchMatches(); // Refresh matches
+    } catch (err) {
+      console.error('Exchange error:', err);
+      toast.error(err.message || 'Failed to initiate exchange');
+    }
+  };
 
   return (
-    <div className="space-y-6">
-      {/* Search and Filter */}
-      <div className="flex flex-col md:flex-row gap-4 mb-6">
-        <input
-          type="text"
-          placeholder="Search skills..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="flex-1 px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-        />
-        <select
-          value={selectedCategory}
-          onChange={(e) => setSelectedCategory(e.target.value)}
-          className="px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+    <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+      <div className="flex justify-between items-center mb-6">
+        <h2 className="text-2xl font-bold text-gray-800">Skills Management</h2>
+        <button
+          onClick={() => setShowMatches(!showMatches)}
+          className="flex items-center px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
         >
-          {skillCategories.map(category => (
-            <option key={category} value={category}>{category}</option>
-          ))}
-        </select>
+          <FiUsers className="mr-2" />
+          {showMatches ? 'Hide Matches' : 'Find Matches'}
+        </button>
       </div>
 
-      {/* Skills Offering Section */}
-      <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
-        <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
-          Skills I Can Offer
-        </h3>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-          <AnimatePresence>
-            {filteredOfferingSkills.map(skill => renderSkillCard(skill, 'offering'))}
-          </AnimatePresence>
-        </div>
+      {showMatches && (
+        <div className="mb-8 border-b pb-6">
+          <h3 className="text-xl font-semibold mb-4">Skill Matches</h3>
+          
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Min Rating</label>
+              <select
+                name="minRating"
+                value={matchFilters.minRating}
+                onChange={handleFilterChange}
+                className="w-full border border-gray-300 rounded-md px-3 py-2"
+              >
+                <option value={0}>Any</option>
+                <option value={3}>3+ Stars</option>
+                <option value={4}>4+ Stars</option>
+                <option value={4.5}>4.5+ Stars</option>
+              </select>
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Skill Level</label>
+              <select
+                name="skillLevel"
+                value={matchFilters.skillLevel}
+                onChange={handleFilterChange}
+                className="w-full border border-gray-300 rounded-md px-3 py-2"
+              >
+                <option value="Any">Any</option>
+                <option value="Beginner">Beginner</option>
+                <option value="Intermediate">Intermediate</option>
+                <option value="Advanced">Advanced</option>
+                <option value="Expert">Expert</option>
+              </select>
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Availability</label>
+              <select
+                name="availability"
+                value={matchFilters.availability}
+                onChange={handleFilterChange}
+                className="w-full border border-gray-300 rounded-md px-3 py-2"
+              >
+                <option value="Any">Any</option>
+                <option value="Online">Online Only</option>
+                <option value="In-Person">In-Person Only</option>
+              </select>
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">&nbsp;</label>
+              <button
+                onClick={fetchMatches}
+                className="w-full px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300 transition-colors"
+              >
+                <FiSearch className="inline mr-2" />
+                Refresh
+              </button>
+            </div>
+          </div>
+          
+          {loadingMatches ? (
+            <div className="flex justify-center items-center h-40">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+            </div>
+          ) : matches.length === 0 ? (
+            <div className="text-center py-8 bg-gray-50 rounded-lg">
+              <FiUsers className="mx-auto h-12 w-12 text-gray-400 mb-4" />
+              <h3 className="text-lg font-medium text-gray-900 mb-2">No matches found</h3>
+              <p className="text-gray-500">
+                Try adding more skills to your profile or adjusting your filters
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {matches.map((match) => (
+                <motion.div
+                  key={match._id}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow border border-gray-200"
+                >
+                  <div className="flex items-center mb-4">
+                    <div className="w-12 h-12 rounded-full bg-gray-200 flex items-center justify-center mr-4">
+                      {match.profilePicture ? (
+                        <img 
+                          src={match.profilePicture} 
+                          alt={match.name}
+                          className="w-12 h-12 rounded-full object-cover"
+                        />
+                      ) : (
+                        <FiUsers className="text-gray-500 text-xl" />
+                      )}
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-lg">{match.name}</h3>
+                      <p className="text-gray-500 text-sm">{match.location || 'Location not specified'}</p>
+                    </div>
+                  </div>
 
-        <div className="space-y-4">
-          <div className="flex flex-col md:flex-row gap-4">
-            <div className="flex-1">
-              <SkillAutocomplete
+                  <div className="mb-4">
+                    <div className="flex items-center mb-2">
+                      <FiStar className="text-yellow-400 mr-2" />
+                      <span className="font-medium">Match Score: </span>
+                      <span className={`ml-2 ${getMatchScoreColor(match.matchScore)}`}>
+                        {match.matchScore}/10
+                      </span>
+                    </div>
+                    <div className="flex items-center">
+                      <FiTag className="text-blue-500 mr-2" />
+                      <span className="text-sm text-gray-600">
+                        {match.skills.filter(s => s.status === 'teaching').length} skills to teach
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <h4 className="font-medium text-sm text-gray-700">Teaching Skills:</h4>
+                    <div className="flex flex-wrap gap-2">
+                      {match.skills
+                        .filter(s => s.status === 'teaching')
+                        .slice(0, 3)
+                        .map((skill, index) => (
+                          <span 
+                            key={index}
+                            className="px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-xs"
+                          >
+                            {skill.skill}
+                          </span>
+                        ))}
+                      {match.skills.filter(s => s.status === 'teaching').length > 3 && (
+                        <span className="px-2 py-1 bg-gray-100 text-gray-800 rounded-full text-xs">
+                          +{match.skills.filter(s => s.status === 'teaching').length - 3} more
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={() => initiateExchange(match._id, match.skills.filter(s => s.status === 'teaching'))}
+                    className="mt-4 w-full bg-blue-500 text-white py-2 px-4 rounded hover:bg-blue-600 transition-colors"
+                  >
+                    Initiate Exchange
+                  </button>
+                </motion.div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+        {/* Skills Offering Section */}
+        <div>
+          <h3 className="text-xl font-semibold mb-4">Skills I'm Offering</h3>
+          
+          <div className="mb-4">
+            <div className="flex items-center mb-2">
+              <input
+                type="text"
+                placeholder="Search skills..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full border border-gray-300 rounded-md px-3 py-2"
+              />
+            </div>
+            <div className="flex items-center">
+              <select
+                value={selectedCategory}
+                onChange={(e) => setSelectedCategory(e.target.value)}
+                className="w-full border border-gray-300 rounded-md px-3 py-2 mt-2"
+              >
+                <option value="All">All Categories</option>
+                <option value="Programming">Programming</option>
+                <option value="Design">Design</option>
+                <option value="Marketing">Marketing</option>
+                <option value="Business">Business</option>
+                <option value="Language">Language</option>
+                <option value="Music">Music</option>
+                <option value="Art">Art</option>
+                <option value="Sports">Sports</option>
+                <option value="Cooking">Cooking</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+          </div>
+          
+          <div className="mb-6">
+            <div className="flex items-center mb-2">
+              <input
+                type="text"
+                placeholder="Skill name"
                 value={offeringSkill.name}
-                onChange={(value) => setOfferingSkill(prev => ({ ...prev, name: value }))}
-                onSelect={(skill) => handleSkillSelect(skill, 'offering')}
-                placeholder="Enter skill name"
-                disabled={loadingOffering}
+                onChange={(e) => setOfferingSkill({ ...offeringSkill, name: e.target.value })}
+                className="w-full border border-gray-300 rounded-md px-3 py-2"
               />
             </div>
-            <select
-              value={offeringSkill.level}
-              onChange={(e) => setOfferingSkill(prev => ({ ...prev, level: e.target.value }))}
-              className="px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+            
+            <div className="grid grid-cols-2 gap-2 mb-2">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Level</label>
+                <select
+                  value={offeringSkill.level}
+                  onChange={(e) => setOfferingSkill({ ...offeringSkill, level: e.target.value })}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2"
+                >
+                  <option value="Beginner">Beginner</option>
+                  <option value="Intermediate">Intermediate</option>
+                  <option value="Advanced">Advanced</option>
+                  <option value="Expert">Expert</option>
+                </select>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Years of Experience</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={offeringSkill.yearsOfExperience}
+                  onChange={(e) => setOfferingSkill({ ...offeringSkill, yearsOfExperience: parseInt(e.target.value) })}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2"
+                />
+              </div>
+            </div>
+            
+            <div className="grid grid-cols-2 gap-2 mb-2">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
+                <select
+                  value={offeringSkill.category}
+                  onChange={(e) => setOfferingSkill({ ...offeringSkill, category: e.target.value })}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2"
+                >
+                  <option value="Programming">Programming</option>
+                  <option value="Design">Design</option>
+                  <option value="Marketing">Marketing</option>
+                  <option value="Business">Business</option>
+                  <option value="Language">Language</option>
+                  <option value="Music">Music</option>
+                  <option value="Art">Art</option>
+                  <option value="Sports">Sports</option>
+                  <option value="Cooking">Cooking</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                <input
+                  type="text"
+                  placeholder="Brief description"
+                  value={offeringSkill.description}
+                  onChange={(e) => setOfferingSkill({ ...offeringSkill, description: e.target.value })}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2"
+                />
+              </div>
+            </div>
+            
+            <button
+              onClick={() => handleAddSkill('offering')}
               disabled={loadingOffering}
+              className="w-full bg-blue-500 text-white py-2 px-4 rounded-md hover:bg-blue-600 transition-colors disabled:opacity-50"
             >
-              <option value="Beginner">Beginner</option>
-              <option value="Intermediate">Intermediate</option>
-              <option value="Advanced">Advanced</option>
-              <option value="Expert">Expert</option>
-            </select>
-            <input
-              type="number"
-              value={offeringSkill.yearsOfExperience}
-              onChange={(e) => setOfferingSkill(prev => ({ ...prev, yearsOfExperience: parseInt(e.target.value) || 1 }))}
-              min="1"
-              className="w-24 px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-              disabled={loadingOffering}
-            />
-            <select
-              value={offeringSkill.category}
-              onChange={(e) => setOfferingSkill(prev => ({ ...prev, category: e.target.value }))}
-              className="px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-              disabled={loadingOffering}
-            >
-              {skillCategories.filter(cat => cat !== 'All').map(category => (
-                <option key={category} value={category}>{category}</option>
-              ))}
-            </select>
+              {loadingOffering ? (
+                <span className="flex items-center justify-center">
+                  <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  Adding...
+                </span>
+              ) : (
+                <span className="flex items-center justify-center">
+                  <FiPlus className="mr-2" />
+                  {editingSkill && editingSkill.type === 'offering' ? 'Update Skill' : 'Add Skill'}
+                </span>
+              )}
+            </button>
           </div>
           
-          <div className="flex flex-col gap-4">
-            <textarea
-              value={offeringSkill.description}
-              onChange={(e) => setOfferingSkill(prev => ({ ...prev, description: e.target.value }))}
-              placeholder="Add a description of your expertise in this skill..."
-              className="px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-              rows="3"
-              disabled={loadingOffering}
-            />
-            
-            <div className="flex items-center gap-4">
-              <button
-                onClick={() => handleAddSkill('offering')}
-                disabled={loadingOffering}
-                className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                {loadingOffering ? 'Adding...' : editingSkill ? 'Update Skill' : 'Add Skill'}
-              </button>
-              {editingSkill && (
-                <button
-                  onClick={() => {
-                    setEditingSkill(null);
-                    setOfferingSkill({
-                      name: '',
-                      level: 'Beginner',
-                      yearsOfExperience: 1,
-                      category: 'Other',
-                      description: '',
-                      certifications: []
-                    });
-                  }}
-                  className="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-500 transition-colors"
+          <div className="space-y-2">
+            {filteredOfferingSkills.length === 0 ? (
+              <p className="text-gray-500 text-center py-4">No skills added yet</p>
+            ) : (
+              filteredOfferingSkills.map((skill) => (
+                <div
+                  key={skill._id}
+                  className="flex items-center justify-between p-3 bg-gray-50 rounded-md"
                 >
-                  Cancel Edit
-                </button>
-              )}
-            </div>
+                  <div>
+                    <h4 className="font-medium">{skill.skill}</h4>
+                    <div className="flex items-center text-sm text-gray-500">
+                      <span className="mr-2">{skill.level}</span>
+                      <span className="mr-2">•</span>
+                      <span>{skill.yearsOfExperience} {skill.yearsOfExperience === 1 ? 'year' : 'years'}</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center">
+                    <button
+                      onClick={() => handleEditSkill(skill, 'offering')}
+                      className="p-1 text-gray-500 hover:text-blue-500"
+                    >
+                      <FiEdit2 />
+                    </button>
+                    <button
+                      onClick={() => handleRemoveSkill(skill, 'offering')}
+                      disabled={loadingSkills[skill._id]}
+                      className="p-1 text-gray-500 hover:text-red-500 ml-2"
+                    >
+                      {loadingSkills[skill._id] ? (
+                        <svg className="animate-spin h-4 w-4 text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                      ) : (
+                        <FiX />
+                      )}
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </div>
-      </div>
 
-      {/* Skills Needed Section */}
-      <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
-        <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
-          Skills I Want to Learn
-        </h3>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-          <AnimatePresence>
-            {filteredNeededSkills.map(skill => renderSkillCard(skill, 'needed'))}
-          </AnimatePresence>
-        </div>
-
-        <div className="space-y-4">
-          <div className="flex flex-col md:flex-row gap-4">
-            <div className="flex-1">
-              <SkillAutocomplete
+        {/* Skills Needed Section */}
+        <div>
+          <h3 className="text-xl font-semibold mb-4">Skills I Need</h3>
+          
+          <div className="mb-6">
+            <div className="flex items-center mb-2">
+              <input
+                type="text"
+                placeholder="Skill name"
                 value={neededSkill.name}
-                onChange={(value) => setNeededSkill(prev => ({ ...prev, name: value }))}
-                onSelect={(skill) => handleSkillSelect(skill, 'needed')}
-                placeholder="Enter skill name"
-                disabled={loadingNeeded}
+                onChange={(e) => setNeededSkill({ ...neededSkill, name: e.target.value })}
+                className="w-full border border-gray-300 rounded-md px-3 py-2"
               />
             </div>
-            <select
-              value={neededSkill.level}
-              onChange={(e) => setNeededSkill(prev => ({ ...prev, level: e.target.value }))}
-              className="px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+            
+            <div className="grid grid-cols-2 gap-2 mb-2">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Level</label>
+                <select
+                  value={neededSkill.level}
+                  onChange={(e) => setNeededSkill({ ...neededSkill, level: e.target.value })}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2"
+                >
+                  <option value="Beginner">Beginner</option>
+                  <option value="Intermediate">Intermediate</option>
+                  <option value="Advanced">Advanced</option>
+                  <option value="Expert">Expert</option>
+                </select>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Years of Experience</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={neededSkill.yearsOfExperience}
+                  onChange={(e) => setNeededSkill({ ...neededSkill, yearsOfExperience: parseInt(e.target.value) })}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2"
+                />
+              </div>
+            </div>
+            
+            <div className="grid grid-cols-2 gap-2 mb-2">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
+                <select
+                  value={neededSkill.category}
+                  onChange={(e) => setNeededSkill({ ...neededSkill, category: e.target.value })}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2"
+                >
+                  <option value="Programming">Programming</option>
+                  <option value="Design">Design</option>
+                  <option value="Marketing">Marketing</option>
+                  <option value="Business">Business</option>
+                  <option value="Language">Language</option>
+                  <option value="Music">Music</option>
+                  <option value="Art">Art</option>
+                  <option value="Sports">Sports</option>
+                  <option value="Cooking">Cooking</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Priority</label>
+                <select
+                  value={neededSkill.priority}
+                  onChange={(e) => setNeededSkill({ ...neededSkill, priority: e.target.value })}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2"
+                >
+                  <option value="Low">Low</option>
+                  <option value="Medium">Medium</option>
+                  <option value="High">High</option>
+                </select>
+              </div>
+            </div>
+            
+            <button
+              onClick={() => handleAddSkill('needed')}
               disabled={loadingNeeded}
+              className="w-full bg-green-500 text-white py-2 px-4 rounded-md hover:bg-green-600 transition-colors disabled:opacity-50"
             >
-              <option value="Beginner">Beginner</option>
-              <option value="Intermediate">Intermediate</option>
-              <option value="Advanced">Advanced</option>
-              <option value="Expert">Expert</option>
-            </select>
-            <input
-              type="number"
-              value={neededSkill.yearsOfExperience}
-              onChange={(e) => setNeededSkill(prev => ({ ...prev, yearsOfExperience: parseInt(e.target.value) || 1 }))}
-              min="1"
-              className="w-24 px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-              disabled={loadingNeeded}
-            />
-            <select
-              value={neededSkill.category}
-              onChange={(e) => setNeededSkill(prev => ({ ...prev, category: e.target.value }))}
-              className="px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-              disabled={loadingNeeded}
-            >
-              {skillCategories.filter(cat => cat !== 'All').map(category => (
-                <option key={category} value={category}>{category}</option>
-              ))}
-            </select>
+              {loadingNeeded ? (
+                <span className="flex items-center justify-center">
+                  <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  Adding...
+                </span>
+              ) : (
+                <span className="flex items-center justify-center">
+                  <FiPlus className="mr-2" />
+                  {editingSkill && editingSkill.type === 'needed' ? 'Update Skill' : 'Add Skill'}
+                </span>
+              )}
+            </button>
           </div>
           
-          <div className="flex flex-col gap-4">
-            <textarea
-              value={neededSkill.description}
-              onChange={(e) => setNeededSkill(prev => ({ ...prev, description: e.target.value }))}
-              placeholder="Describe what you want to learn about this skill..."
-              className="px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-              rows="3"
-              disabled={loadingNeeded}
-            />
-            
-            <select
-              value={neededSkill.priority}
-              onChange={(e) => setNeededSkill(prev => ({ ...prev, priority: e.target.value }))}
-              className="px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-              disabled={loadingNeeded}
-            >
-              <option value="Low">Low Priority</option>
-              <option value="Medium">Medium Priority</option>
-              <option value="High">High Priority</option>
-            </select>
-            
-            <div className="flex items-center gap-4">
-              <button
-                onClick={() => handleAddSkill('needed')}
-                disabled={loadingNeeded}
-                className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                {loadingNeeded ? 'Adding...' : editingSkill ? 'Update Skill' : 'Add Skill'}
-              </button>
-              {editingSkill && (
-                <button
-                  onClick={() => {
-                    setEditingSkill(null);
-                    setNeededSkill({
-                      name: '',
-                      level: 'Beginner',
-                      yearsOfExperience: 1,
-                      category: 'Other',
-                      description: '',
-                      priority: 'Medium'
-                    });
-                  }}
-                  className="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-500 transition-colors"
+          <div className="space-y-2">
+            {filteredNeededSkills.length === 0 ? (
+              <p className="text-gray-500 text-center py-4">No skills added yet</p>
+            ) : (
+              filteredNeededSkills.map((skill) => (
+                <div
+                  key={skill._id}
+                  className="flex items-center justify-between p-3 bg-gray-50 rounded-md"
                 >
-                  Cancel Edit
-                </button>
-              )}
-            </div>
+                  <div>
+                    <h4 className="font-medium">{skill.skill}</h4>
+                    <div className="flex items-center text-sm text-gray-500">
+                      <span className="mr-2">{skill.level}</span>
+                      <span className="mr-2">•</span>
+                      <span>{skill.yearsOfExperience} {skill.yearsOfExperience === 1 ? 'year' : 'years'}</span>
+                      {skill.priority && (
+                        <>
+                          <span className="mr-2">•</span>
+                          <span className={`${
+                            skill.priority === 'High' ? 'text-red-500' :
+                            skill.priority === 'Medium' ? 'text-yellow-500' :
+                            'text-green-500'
+                          }`}>
+                            {skill.priority} Priority
+                          </span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center">
+                    <button
+                      onClick={() => handleEditSkill(skill, 'needed')}
+                      className="p-1 text-gray-500 hover:text-blue-500"
+                    >
+                      <FiEdit2 />
+                    </button>
+                    <button
+                      onClick={() => handleRemoveSkill(skill, 'needed')}
+                      disabled={loadingSkills[skill._id]}
+                      className="p-1 text-gray-500 hover:text-red-500 ml-2"
+                    >
+                      {loadingSkills[skill._id] ? (
+                        <svg className="animate-spin h-4 w-4 text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                      ) : (
+                        <FiX />
+                      )}
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </div>
       </div>

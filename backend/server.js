@@ -16,6 +16,7 @@ const searchRoutes = require("./routes/searchRoutes");
 const authRoutes = require('./routes/authRoutes');
 const exchangeRoutes = require('./routes/exchangeRoutes');
 const activityRoutes = require('./routes/activityRoutes');
+const skillMatchRoutes = require('./routes/skillMatchRoutes');
 const { errorHandler, notFound } = require("./middleware/errorMiddleware");
 const path = require("path");
 const fs = require("fs");
@@ -85,6 +86,7 @@ app.use('/api/chat', chatRoutes);
 app.use('/api/search', searchRoutes);
 app.use('/api', exchangeRoutes);
 app.use('/api', activityRoutes);
+app.use('/api', skillMatchRoutes);
 
 // Socket.io connection handling
 const onlineUsers = new Map();

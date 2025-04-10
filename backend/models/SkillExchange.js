@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 
-const exchangeSchema = new mongoose.Schema({
+const skillExchangeSchema = new mongoose.Schema({
   initiator: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
@@ -11,33 +11,20 @@ const exchangeSchema = new mongoose.Schema({
     ref: 'User',
     required: true
   },
-  skillsOffered: [{
+  offeredSkills: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Skill',
     required: true
   }],
-  skillsNeeded: [{
+  requestedSkills: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Skill',
     required: true
   }],
   status: {
     type: String,
-    enum: ['pending', 'accepted', 'rejected', 'completed', 'cancelled'],
+    enum: ['pending', 'accepted', 'rejected', 'completed'],
     default: 'pending'
-  },
-  createdAt: {
-    type: Date,
-    default: Date.now
-  },
-  acceptedAt: {
-    type: Date
-  },
-  rejectedAt: {
-    type: Date
-  },
-  completedAt: {
-    type: Date
   },
   initiatorRating: {
     rating: { type: Number, min: 1, max: 5 },
@@ -52,21 +39,38 @@ const exchangeSchema = new mongoose.Schema({
   messages: [{
     sender: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'User'
+      ref: 'User',
+      required: true
     },
-    content: String,
+    content: {
+      type: String,
+      required: true
+    },
     timestamp: {
       type: Date,
       default: Date.now
     }
-  }]
-}, {
-  timestamps: true
+  }],
+  completionDate: Date,
+  createdAt: {
+    type: Date,
+    default: Date.now
+  },
+  updatedAt: {
+    type: Date,
+    default: Date.now
+  }
 });
 
-// Indexes for better query performance
-exchangeSchema.index({ initiator: 1, recipient: 1 });
-exchangeSchema.index({ status: 1 });
-exchangeSchema.index({ createdAt: -1 });
+// Indexes for faster queries
+skillExchangeSchema.index({ initiator: 1, recipient: 1 });
+skillExchangeSchema.index({ status: 1 });
+skillExchangeSchema.index({ createdAt: -1 });
 
-module.exports = mongoose.model('Exchange', exchangeSchema); 
+// Update the updatedAt timestamp before saving
+skillExchangeSchema.pre('save', function(next) {
+  this.updatedAt = new Date();
+  next();
+});
+
+module.exports = mongoose.model('SkillExchange', skillExchangeSchema); 

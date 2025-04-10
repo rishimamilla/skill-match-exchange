@@ -26,6 +26,7 @@ router.get('/search', searchSkills);
 router.get('/matches', protect, findMatches);
 router.get('/matches/:userId', protect, getSkillMatches);
 router.post('/user/:userId', protect, addUserSkill);
+router.put('/user/:userId', protect, addUserSkill);
 
 // Endorsement routes
 router.post('/:id/endorse', protect, endorseSkill);

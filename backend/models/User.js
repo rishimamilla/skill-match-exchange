@@ -78,6 +78,15 @@ const UserSchema = new mongoose.Schema({
       type: String,
       maxlength: [500, "Description cannot be more than 500 characters"],
     },
+    certifications: {
+      type: [String],
+      default: []
+    },
+    priority: {
+      type: String,
+      enum: ["Low", "Medium", "High"],
+      default: "Medium"
+    },
     rating: {
       type: Number,
       min: 0,

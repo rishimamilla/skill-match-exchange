@@ -33,13 +33,18 @@ const skillAPI = {
   // Add a skill to user's profile
   addUserSkill: async (skillData) => {
     try {
+      console.log('Adding skill with data:', skillData);
       const response = await axios.post(
         `${API_URL}/skills/user/${skillData.userId}`,
         {
           skill: skillData.skill,
           level: skillData.level,
           yearsOfExperience: skillData.yearsOfExperience,
-          status: skillData.status
+          status: skillData.status,
+          category: skillData.category,
+          description: skillData.description,
+          certifications: skillData.certifications,
+          priority: skillData.priority
         },
         {
           headers: {
@@ -48,10 +53,43 @@ const skillAPI = {
           }
         }
       );
+      console.log('Skill added successfully:', response.data);
       return response.data;
     } catch (error) {
       console.error('Error adding skill:', error.response?.data || error);
       throw new Error(error.response?.data?.message || 'Failed to add skill');
+    }
+  },
+
+  // Update a user's skill
+  updateUserSkill: async (skillData) => {
+    try {
+      console.log('Updating skill with data:', skillData);
+      const response = await axios.put(
+        `${API_URL}/skills/user/${skillData.userId}`,
+        {
+          _id: skillData._id,
+          skill: skillData.skill,
+          level: skillData.level,
+          yearsOfExperience: skillData.yearsOfExperience,
+          status: skillData.status,
+          category: skillData.category,
+          description: skillData.description,
+          certifications: skillData.certifications,
+          priority: skillData.priority
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem('token')}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+      console.log('Skill updated successfully:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('Error updating skill:', error.response?.data || error);
+      throw new Error(error.response?.data?.message || 'Failed to update skill');
     }
   },
 

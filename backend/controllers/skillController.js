@@ -131,14 +131,14 @@ exports.getSkillMatches = asyncHandler(async (req, res) => {
 // @access  Private
 exports.addUserSkill = asyncHandler(async (req, res) => {
   try {
-    console.log('Adding skill to user profile:', req.params.userId, req.body);
+    console.log('Adding/updating skill to user profile:', req.params.userId, req.body);
     
     const user = await User.findById(req.params.userId);
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    const { skill, level, yearsOfExperience, status, category } = req.body;
+    const { _id, skill, level, yearsOfExperience, status, category, description, certifications, priority } = req.body;
     
     if (!skill || !level || !yearsOfExperience || !status) {
       return res.status(400).json({ 
@@ -148,26 +148,55 @@ exports.addUserSkill = asyncHandler(async (req, res) => {
       });
     }
 
-    // Check if skill already exists in user's skills
-    const existingSkill = user.skills.find(s => 
-      s.skill.toLowerCase() === skill.toLowerCase() && 
-      s.status === status
-    );
+    // Check if this is an update or a new skill
+    if (_id) {
+      // This is an update
+      const skillIndex = user.skills.findIndex(s => s._id.toString() === _id);
+      if (skillIndex === -1) {
+        return res.status(404).json({ message: 'Skill not found in user profile' });
+      }
+      
+      // Update the skill
+      user.skills[skillIndex] = {
+        ...user.skills[skillIndex],
+        skill,
+        level,
+        yearsOfExperience: Number(yearsOfExperience),
+        status,
+        category: category || 'Other',
+        description: description || '',
+        ...(status === 'teaching' && certifications ? { certifications } : {}),
+        ...(status === 'learning' && priority ? { priority } : {})
+      };
+      
+      console.log('Updated skill:', user.skills[skillIndex]);
+    } else {
+      // This is a new skill
+      // Check if skill already exists in user's skills
+      const existingSkill = user.skills.find(s => 
+        s.skill.toLowerCase() === skill.toLowerCase() && 
+        s.status === status
+      );
 
-    if (existingSkill) {
-      return res.status(400).json({ message: 'Skill already exists in your profile' });
+      if (existingSkill) {
+        return res.status(400).json({ message: 'Skill already exists in your profile' });
+      }
+
+      // Add skill to user's skills array
+      const newSkill = {
+        skill,
+        level,
+        yearsOfExperience: Number(yearsOfExperience),
+        status,
+        category: category || 'Other', // Add category field with default value
+        description: description || '',
+        ...(status === 'teaching' && certifications ? { certifications } : {}),
+        ...(status === 'learning' && priority ? { priority } : {})
+      };
+
+      user.skills.push(newSkill);
+      console.log('Added new skill:', newSkill);
     }
-
-    // Add skill to user's skills array
-    const newSkill = {
-      skill,
-      level,
-      yearsOfExperience: Number(yearsOfExperience),
-      status,
-      category: category || 'Other' // Add category field with default value
-    };
-
-    user.skills.push(newSkill);
 
     // Update skill popularity if it exists
     try {
@@ -201,7 +230,7 @@ exports.addUserSkill = asyncHandler(async (req, res) => {
 
     // Save the user with new skill
     const savedUser = await user.save();
-    console.log('Skill added successfully:', savedUser.skills[savedUser.skills.length - 1]);
+    console.log('Skill added/updated successfully:', savedUser.skills[savedUser.skills.length - 1]);
     
     // Return the updated user without sensitive information
     const userResponse = savedUser.toObject();
@@ -213,7 +242,7 @@ exports.addUserSkill = asyncHandler(async (req, res) => {
   } catch (error) {
     console.error('Error in addUserSkill:', error);
     res.status(500).json({ 
-      message: 'Error adding skill to profile',
+      message: 'Error adding/updating skill to profile',
       error: error.message
     });
   }
@@ -236,6 +265,11 @@ exports.findMatches = asyncHandler(async (req, res) => {
   const userTeachingSkills = user.skills.filter(s => s.status === 'teaching').map(s => s.skill);
   const userLearningSkills = user.skills.filter(s => s.status === 'learning').map(s => s.skill);
 
+  console.log('Current user skills:', {
+    teaching: userTeachingSkills,
+    learning: userLearningSkills
+  });
+
   // Find potential matches based on skills and interests
   const matches = await User.find({
     _id: { $ne: user._id },
@@ -246,6 +280,8 @@ exports.findMatches = asyncHandler(async (req, res) => {
   })
   .select('name email location skills rating profilePicture')
   .limit(10);
+
+  console.log('Found potential matches:', matches.length);
 
   // Calculate match score for each potential match
   const scoredMatches = matches.map(match => {
@@ -268,6 +304,13 @@ exports.findMatches = asyncHandler(async (req, res) => {
     // Add rating bonus
     score += match.rating || 0;
 
+    console.log('Match score calculation for', match.name, {
+      teachingMatches,
+      learningMatches,
+      ratingBonus: match.rating || 0,
+      totalScore: score
+    });
+
     return {
       ...match.toObject(),
       matchScore: score
@@ -276,6 +319,13 @@ exports.findMatches = asyncHandler(async (req, res) => {
 
   // Sort matches by score
   scoredMatches.sort((a, b) => b.matchScore - a.matchScore);
+
+  console.log('Final matches with scores:', 
+    scoredMatches.map(m => ({
+      name: m.name,
+      score: m.matchScore
+    }))
+  );
 
   res.status(200).json(scoredMatches);
 });
