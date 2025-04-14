@@ -4,13 +4,22 @@ import { useAuth } from '../../context/AuthContext';
 import { FiHome, FiUsers, FiMessageSquare, FiLogOut, FiUser, FiSun, FiMoon, FiBell, FiSearch, FiHelpCircle, FiInfo } from 'react-icons/fi';
 import { motion } from 'framer-motion';
 import { getStaticFileUrl } from '../../config';
+import { useNotification } from '../../context/NotificationContext';
+import ProfileImage from '../common/ProfileImage';
+import skillAPI from '../../api/skillAPI';
+import { toast } from 'react-toastify';
 
-const Navbar = () => {
+const Navbar = ({ onExchangeAccepted }) => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [isDarkMode, setIsDarkMode] = useState(false);
-  const [notifications, setNotifications] = useState([]);
-  const [showNotifications, setShowNotifications] = useState(false);
+  const { 
+    notifications, 
+    showNotifications, 
+    toggleNotifications, 
+    markAsRead,
+    fetchNotifications 
+  } = useNotification();
 
   useEffect(() => {
     // Check system preference for dark mode
@@ -31,6 +40,33 @@ const Navbar = () => {
 
   const getProfilePictureUrl = () => {
     return getStaticFileUrl(user?.profilePicture) || '/default-avatar.png';
+  };
+
+  const handleNotificationClick = async (notification) => {
+    if (notification.type === 'exchange_request') {
+      // Navigate to the exchange details page
+      navigate(`/exchanges/${notification.exchangeId}`);
+      // Mark the notification as read
+      await markAsRead(notification.id);
+    }
+  };
+
+  const handleAcceptExchange = async (exchangeId) => {
+    try {
+      await skillAPI.acceptExchange(exchangeId);
+      toast.success('Exchange accepted successfully!');
+      // Refresh notifications
+      await fetchNotifications();
+      // Close the notifications dropdown
+      toggleNotifications();
+      // Call the callback if provided
+      if (onExchangeAccepted) {
+        onExchangeAccepted();
+      }
+    } catch (error) {
+      console.error('Error accepting exchange:', error);
+      toast.error(error.response?.data?.message || 'Failed to accept exchange');
+    }
   };
 
   return (
@@ -113,13 +149,13 @@ const Navbar = () => {
             {user && (
               <div className="relative">
                 <button
-                  onClick={() => setShowNotifications(!showNotifications)}
+                  onClick={toggleNotifications}
                   className="p-2 rounded-full text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 relative"
                 >
                   <FiBell className="h-5 w-5" />
-                  {notifications.length > 0 && (
+                  {notifications.filter(n => !n.read).length > 0 && (
                     <span className="absolute top-0 right-0 h-4 w-4 bg-red-500 rounded-full text-xs text-white flex items-center justify-center">
-                      {notifications.length}
+                      {notifications.filter(n => !n.read).length}
                     </span>
                   )}
                 </button>
@@ -132,10 +168,29 @@ const Navbar = () => {
                       {notifications.length === 0 ? (
                         <p className="p-4 text-gray-500 dark:text-gray-400">No new notifications</p>
                       ) : (
-                        notifications.map((notification, index) => (
-                          <div key={index} className="p-4 border-b border-gray-200 dark:border-gray-700">
+                        notifications.map((notification) => (
+                          <div 
+                            key={notification.id} 
+                            className={`p-4 border-b border-gray-200 dark:border-gray-700 cursor-pointer ${
+                              !notification.read ? 'bg-gray-50 dark:bg-gray-700' : ''
+                            }`}
+                            onClick={() => handleNotificationClick(notification)}
+                          >
                             <p className="text-sm text-gray-900 dark:text-white">{notification.message}</p>
                             <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{notification.time}</p>
+                            {notification.type === 'exchange_request' && !notification.read && (
+                              <div className="mt-2 flex justify-end">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleAcceptExchange(notification.exchangeId);
+                                  }}
+                                  className="text-xs bg-green-500 text-white px-2 py-1 rounded hover:bg-green-600"
+                                >
+                                  Accept Exchange
+                                </button>
+                              </div>
+                            )}
                           </div>
                         ))
                       )}
@@ -148,14 +203,10 @@ const Navbar = () => {
             {user ? (
               <div className="relative group">
                 <button className="flex items-center space-x-2 text-gray-600 dark:text-gray-300 hover:text-indigo-600 dark:hover:text-indigo-400">
-                  <img
-                    src={getProfilePictureUrl()}
+                  <ProfileImage
+                    src={user.profilePicture}
                     alt="Profile"
-                    className="h-8 w-8 rounded-full object-cover"
-                    onError={(e) => {
-                      e.target.onerror = null;
-                      e.target.src = '/default-avatar.png';
-                    }}
+                    size="xs"
                   />
                   <span className="text-sm font-medium">{user.name}</span>
                   <FiUser className="ml-1" />

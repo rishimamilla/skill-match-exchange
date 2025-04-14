@@ -167,6 +167,26 @@ const UserSchema = new mongoose.Schema({
     type: Date,
     default: Date.now,
   },
+  notifications: [{
+    message: String,
+    type: {
+      type: String,
+      enum: ['info', 'exchange', 'message', 'system'],
+      default: 'info'
+    },
+    exchangeId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Exchange'
+    },
+    timestamp: {
+      type: Date,
+      default: Date.now
+    },
+    read: {
+      type: Boolean,
+      default: false
+    }
+  }],
 }, {
   timestamps: true,
 });

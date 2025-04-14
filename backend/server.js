@@ -2,13 +2,13 @@ const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose');
 const http = require('http');
-const socketIo = require('socket.io');
 const helmet = require('helmet');
 const morgan = require('morgan');
 const compression = require('compression');
 const rateLimit = require('express-rate-limit');
 const dotenv = require("dotenv");
 const connectDB = require("./config/db");
+const { initializeSocket } = require("./config/socket");
 const userRoutes = require("./routes/userRoutes");
 const skillRoutes = require("./routes/skillRoutes");
 const chatRoutes = require("./routes/chatRoutes");
@@ -17,34 +17,26 @@ const authRoutes = require('./routes/authRoutes');
 const exchangeRoutes = require('./routes/exchangeRoutes');
 const activityRoutes = require('./routes/activityRoutes');
 const skillMatchRoutes = require('./routes/skillMatchRoutes');
+const learningProgressRoutes = require('./routes/learningProgressRoutes');
+const matchRoutes = require('./routes/matchRoutes');
+const notificationRoutes = require('./routes/notificationRoutes');
 const { errorHandler, notFound } = require("./middleware/errorMiddleware");
 const path = require("path");
 const fs = require("fs");
+const jwt = require('jsonwebtoken');
 
 dotenv.config();
 connectDB();
 
 const app = express();
 const server = http.createServer(app);
-const io = socketIo(server, {
-  cors: {
-    origin: [process.env.FRONTEND_URL || "http://localhost:3000", "http://localhost:3001"],
-    methods: ["GET", "POST"]
-  }
-});
-
-// Create uploads directory if it doesn't exist
-const uploadsDir = path.join(__dirname, 'uploads/profiles');
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true });
-}
 
 // CORS configuration
 const corsOptions = {
-  origin: [process.env.FRONTEND_URL || "http://localhost:3000", "http://localhost:3001"],
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  origin: process.env.CLIENT_URL || "http://localhost:3000",
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+  credentials: true
 };
 
 // Middleware
@@ -66,17 +58,46 @@ app.use(limiter);
 
 // Serve static files from uploads directory
 app.use('/uploads', express.static(path.join(__dirname, 'uploads'), {
-  setHeaders: (res, path) => {
-    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET');
+  setHeaders: (res, filePath) => {
+    try {
+      // Set CORS headers
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'GET');
+      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+      
+      // Set cache control with a shorter max-age and must-revalidate
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      
+      // Set content type based on file extension
+      const ext = path.extname(filePath).toLowerCase();
+      if (ext === '.jpg' || ext === '.jpeg') {
+        res.setHeader('Content-Type', 'image/jpeg');
+      } else if (ext === '.png') {
+        res.setHeader('Content-Type', 'image/png');
+      }
+      
+      // Add ETag for cache validation
+      const stats = fs.statSync(filePath);
+      const etag = `${stats.size}-${stats.mtime.getTime()}`;
+      res.setHeader('ETag', etag);
+      
+      // Add additional security headers
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('X-Frame-Options', 'DENY');
+    } catch (error) {
+      console.error('Error setting headers for file:', filePath, error);
+      // Set default headers even if there's an error
+      res.setHeader('Content-Type', 'image/jpeg');
+      res.setHeader('Cache-Control', 'no-cache');
+    }
   }
 }));
 
-// Database connection
-mongoose.connect(process.env.MONGODB_URI)
-  .then(() => console.log('Connected to MongoDB'))
-  .catch(err => console.error('MongoDB connection error:', err));
+// Initialize Socket.IO with proper configuration
+const io = initializeSocket(server);
+
+// Make io accessible to routes
+app.set('io', io);
 
 // Routes
 app.use('/api/auth', authRoutes);
@@ -87,39 +108,21 @@ app.use('/api/search', searchRoutes);
 app.use('/api', exchangeRoutes);
 app.use('/api', activityRoutes);
 app.use('/api', skillMatchRoutes);
+app.use('/api/learning-progress', learningProgressRoutes);
+app.use('/api/matches', matchRoutes);
+app.use('/api/notifications', notificationRoutes);
 
-// Socket.io connection handling
-const onlineUsers = new Map();
-
-io.on('connection', (socket) => {
-  console.log('New client connected');
-  
-  // When a user connects, add them to online users
-  socket.on('userOnline', (userId) => {
-    onlineUsers.set(userId, socket.id);
-    io.emit('onlineUsers', Array.from(onlineUsers.keys()));
-  });
-
-  socket.on('join', (userId) => {
-    socket.join(userId);
-  });
-
-  socket.on('sendMessage', async (message) => {
-    // Handle message sending
-    io.to(message.receiverId).emit('receiveMessage', message);
-  });
-
-  // When a user disconnects, remove them from online users
-  socket.on('disconnect', () => {
-    for (let [userId, socketId] of onlineUsers.entries()) {
-      if (socketId === socket.id) {
-        onlineUsers.delete(userId);
-        io.emit('onlineUsers', Array.from(onlineUsers.keys()));
-        break;
+// Debug: Log all registered routes
+app._router.stack.forEach(function(r){
+  if (r.route && r.route.path){
+    console.log(`Route: ${r.route.stack[0].method.toUpperCase()} ${r.route.path}`);
+  } else if (r.name === 'router') {
+    r.handle.stack.forEach(function(h) {
+      if (h.route) {
+        console.log(`Route: ${h.route.stack[0].method.toUpperCase()} ${r.regexp}${h.route.path}`);
       }
-    }
-    console.log('Client disconnected');
-  });
+    });
+  }
 });
 
 app.get("/", (req, res) => {
@@ -130,7 +133,32 @@ app.get("/", (req, res) => {
 app.use(notFound);
 app.use(errorHandler);
 
+// Error handling middleware
+app.use((err, req, res, next) => {
+  console.error('Global error handler caught an error:');
+  console.error('Error message:', err.message);
+  console.error('Error stack:', err.stack);
+  console.error('Request URL:', req.originalUrl);
+  console.error('Request method:', req.method);
+  console.error('Request body:', req.body);
+  console.error('Request params:', req.params);
+  
+  const statusCode = err.statusCode || 500;
+  res.status(statusCode).json({
+    message: err.message || 'Server Error',
+    stack: process.env.NODE_ENV === 'development' ? err.stack : undefined,
+    details: err.details || 'No additional details available'
+  });
+});
+
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
+});
+
+// Handle unhandled promise rejections
+process.on('unhandledRejection', (err, promise) => {
+  console.log(`Error: ${err.message}`);
+  // Close server & exit process
+  server.close(() => process.exit(1));
 });

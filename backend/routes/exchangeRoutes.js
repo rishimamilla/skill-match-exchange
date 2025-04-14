@@ -29,7 +29,25 @@ router.get('/exchanges', protect, async (req, res) => {
 // @access  Private
 router.post('/exchanges', protect, async (req, res) => {
   try {
-    const { recipientId, skillsOffered, skillsNeeded } = req.body;
+    const { 
+      recipientId, 
+      skillsOffered, 
+      skillsNeeded,
+      duration,
+      frequency,
+      preferredTime,
+      notes
+    } = req.body;
+
+    console.log('Creating exchange with data:', {
+      recipientId,
+      skillsOffered,
+      skillsNeeded,
+      duration,
+      frequency,
+      preferredTime,
+      notes
+    });
 
     // Check if recipient exists
     const recipient = await User.findById(recipientId);
@@ -55,7 +73,12 @@ router.post('/exchanges', protect, async (req, res) => {
       initiator: req.user._id,
       recipient: recipientId,
       skillsOffered,
-      skillsNeeded
+      skillsNeeded,
+      duration,
+      frequency,
+      preferredTime,
+      notes,
+      status: 'pending'
     });
 
     // Populate the exchange with user and skill details
@@ -68,7 +91,8 @@ router.post('/exchanges', protect, async (req, res) => {
 
     res.status(201).json(exchange);
   } catch (error) {
-    res.status(500).json({ message: 'Server error' });
+    console.error('Error creating exchange:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
   }
 });
 

@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { FiUser, FiCircle, FiMessageSquare, FiSearch } from 'react-icons/fi';
+import { FiUser, FiCircle, FiMessageSquare, FiSearch, FiUsers } from 'react-icons/fi';
 import { useChat } from '../context/ChatContext';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-toastify';
+import { format } from 'date-fns';
 
 const ChatPage = () => {
   const { user } = useAuth();
@@ -20,10 +21,16 @@ const ChatPage = () => {
   } = useChat();
   const [message, setMessage] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const messagesEndRef = useRef(null);
 
   useEffect(() => {
     fetchChats();
   }, []);
+
+  useEffect(() => {
+    // Scroll to bottom when messages change
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [currentChat?.messages]);
 
   const handleSendMessage = async (e) => {
     e.preventDefault();
@@ -38,14 +45,35 @@ const ChatPage = () => {
   };
 
   const filteredChats = chats.filter(chat => {
-    const otherUser = chat.participants.find(p => p._id !== user._id);
-    return otherUser.name.toLowerCase().includes(searchQuery.toLowerCase());
+    if (!chat?.participants) return false;
+    const otherUser = chat.participants.find(p => p?._id !== user?._id);
+    return otherUser?.name?.toLowerCase().includes(searchQuery.toLowerCase()) || false;
   });
+
+  const formatMessageTime = (timestamp) => {
+    try {
+      if (!timestamp) return '';
+      const date = new Date(timestamp);
+      if (isNaN(date.getTime())) return '';
+      return format(date, 'HH:mm');
+    } catch (error) {
+      console.error('Error formatting date:', error);
+      return '';
+    }
+  };
 
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-red-500">Error loading chats: {error}</div>
       </div>
     );
   }
@@ -56,18 +84,40 @@ const ChatPage = () => {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
           {/* Online Users Section */}
           <div className="bg-white rounded-lg shadow-md p-4">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">Online Users</h2>
+            <div className="flex items-center space-x-2 mb-4">
+              <FiUsers className="text-indigo-500" />
+              <h2 className="text-lg font-semibold text-gray-900">Online Users</h2>
+              <span className="ml-auto bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full">
+                {onlineUsers?.length || 0} online
+              </span>
+            </div>
             <div className="space-y-2">
-              {onlineUsers.map((onlineUser) => (
-                <div
-                  key={onlineUser._id}
-                  className="flex items-center space-x-2 p-2 hover:bg-gray-50 rounded-lg cursor-pointer"
-                  onClick={() => startChat(onlineUser._id)}
-                >
-                  <FiCircle className="text-green-500" />
-                  <span className="text-gray-700">{onlineUser.name}</span>
+              {onlineUsers?.length > 0 ? (
+                onlineUsers.map((onlineUser) => (
+                  <div
+                    key={onlineUser?._id}
+                    className="flex items-center space-x-3 p-2 hover:bg-gray-50 rounded-lg cursor-pointer transition-colors duration-200"
+                    onClick={() => startChat(onlineUser?._id)}
+                  >
+                    <div className="relative">
+                      <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center">
+                        <FiUser className="w-5 h-5 text-indigo-500" />
+                      </div>
+                      <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-white"></div>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-900 truncate">
+                        {onlineUser?.name || 'Unknown User'}
+                      </p>
+                      <p className="text-xs text-gray-500">Click to start chat</p>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="text-center py-4">
+                  <p className="text-sm text-gray-500">No users online</p>
                 </div>
-              ))}
+              )}
             </div>
           </div>
 
@@ -87,27 +137,29 @@ const ChatPage = () => {
             </div>
             <div className="space-y-2">
               {filteredChats.map((chat) => {
-                const otherUser = chat.participants.find(p => p._id !== user._id);
-                const isOnline = onlineUsers.some(u => u._id === otherUser._id);
+                const otherUser = chat?.participants?.find(p => p?._id !== user?._id);
+                const isOnline = onlineUsers?.some(u => u?._id === otherUser?._id);
                 return (
                   <div
-                    key={chat._id}
+                    key={chat?._id}
                     className={`flex items-center space-x-2 p-2 rounded-lg cursor-pointer ${
-                      currentChat?._id === chat._id ? 'bg-indigo-50' : 'hover:bg-gray-50'
+                      currentChat?._id === chat?._id ? 'bg-indigo-50' : 'hover:bg-gray-50'
                     }`}
-                    onClick={() => fetchChatById(chat._id)}
+                    onClick={() => fetchChatById(chat?._id)}
                   >
                     <div className="relative">
-                      <FiUser className="text-gray-400" />
+                      <FiUser className="w-8 h-8 text-gray-400" />
                       {isOnline && (
-                        <FiCircle className="absolute -bottom-1 -right-1 text-green-500 text-xs" />
+                        <FiCircle className="absolute bottom-0 right-0 w-3 h-3 text-green-500" />
                       )}
                     </div>
                     <div className="flex-1">
-                      <p className="text-gray-900">{otherUser.name}</p>
-                      <p className="text-sm text-gray-500 truncate">
-                        {chat.lastMessage?.content || 'No messages yet'}
-                      </p>
+                      <div className="font-medium text-gray-900">
+                        {otherUser?.name || 'Unknown User'}
+                      </div>
+                      <div className="text-sm text-gray-500">
+                        {chat?.lastMessage?.text || 'No messages yet'}
+                      </div>
                     </div>
                   </div>
                 );
@@ -116,69 +168,59 @@ const ChatPage = () => {
           </div>
 
           {/* Chat Messages */}
-          <div className="md:col-span-2 bg-white rounded-lg shadow-md">
+          <div className="md:col-span-2 bg-white rounded-lg shadow-md p-4">
             {currentChat ? (
-              <div className="flex flex-col h-[600px]">
-                {/* Chat Header */}
-                <div className="p-4 border-b">
+              <>
+                <div className="mb-4">
                   <h2 className="text-lg font-semibold text-gray-900">
-                    {currentChat.participants.find(p => p._id !== user._id).name}
+                    {currentChat?.participants?.find(p => p?._id !== user?._id)?.name || 'Unknown User'}
                   </h2>
                 </div>
-
-                {/* Messages */}
-                <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                  {currentChat.messages.map((message) => (
+                <div className="h-96 overflow-y-auto mb-4">
+                  {currentChat?.messages?.map((message) => (
                     <div
-                      key={message._id}
-                      className={`flex ${
-                        message.sender._id === user._id ? 'justify-end' : 'justify-start'
+                      key={message?._id}
+                      className={`mb-4 ${
+                        message?.sender?._id === user?._id ? 'text-right' : 'text-left'
                       }`}
                     >
                       <div
-                        className={`max-w-xs rounded-lg p-3 ${
-                          message.sender._id === user._id
-                            ? 'bg-indigo-600 text-white'
+                        className={`inline-block p-3 rounded-lg ${
+                          message?.sender?._id === user?._id
+                            ? 'bg-indigo-500 text-white'
                             : 'bg-gray-100 text-gray-900'
                         }`}
                       >
-                        <p>{message.content}</p>
-                        <p className="text-xs mt-1 opacity-70">
-                          {new Date(message.createdAt).toLocaleTimeString()}
-                        </p>
+                        {message?.content || message?.text}
+                        <div className="text-xs mt-1 opacity-70">
+                          {formatMessageTime(message?.createdAt)}
+                        </div>
                       </div>
                     </div>
                   ))}
+                  <div ref={messagesEndRef} />
                 </div>
-
-                {/* Message Input */}
-                <form onSubmit={handleSendMessage} className="p-4 border-t">
+                <form onSubmit={handleSendMessage}>
                   <div className="flex space-x-2">
                     <input
                       type="text"
                       value={message}
                       onChange={(e) => setMessage(e.target.value)}
                       placeholder="Type a message..."
-                      className="flex-1 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      className="flex-1 p-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     />
                     <button
                       type="submit"
-                      className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      className="px-4 py-2 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     >
                       Send
                     </button>
                   </div>
                 </form>
-              </div>
+              </>
             ) : (
-              <div className="flex items-center justify-center h-[600px]">
-                <div className="text-center">
-                  <FiMessageSquare className="mx-auto h-12 w-12 text-gray-400" />
-                  <h3 className="mt-2 text-sm font-medium text-gray-900">No chat selected</h3>
-                  <p className="mt-1 text-sm text-gray-500">
-                    Select a chat from the list to start messaging
-                  </p>
-                </div>
+              <div className="flex items-center justify-center h-96">
+                <div className="text-gray-500">Select a chat to start messaging</div>
               </div>
             )}
           </div>

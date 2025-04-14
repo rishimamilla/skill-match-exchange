@@ -4,6 +4,7 @@ import { FaUser, FaStar, FaExchangeAlt, FaClock } from 'react-icons/fa';
 import { toast } from 'react-toastify';
 import { skillAPI } from '../api/skillAPI';
 import { useAuth } from '../context/AuthContext';
+import ProfileImage from './common/ProfileImage';
 
 const SkillMatch = () => {
   const [matches, setMatches] = useState([]);
@@ -11,8 +12,9 @@ const SkillMatch = () => {
   const [error, setError] = useState(null);
   const [selectedMatch, setSelectedMatch] = useState(null);
   const [userSkills, setUserSkills] = useState([]);
-  const [selectedSkills, setSelectedSkills] = useState([]);
+  const [selectedSkills, setSelectedSkills] = useState({});
   const { user } = useAuth();
+  const [isInitiating, setIsInitiating] = useState(false);
 
   useEffect(() => {
     fetchMatches();
@@ -22,12 +24,29 @@ const SkillMatch = () => {
   const fetchMatches = async () => {
     try {
       setLoading(true);
-      const data = await skillAPI.getSkillMatches();
-      setMatches(data);
+      const response = await skillAPI.getSkillMatches();
+      
+      // Process matches to ensure proper profile picture paths
+      const processedMatches = response.map(match => {
+        if (match.profilePicture) {
+          // If it's already a full URL, keep it as is
+          if (match.profilePicture.startsWith('http')) {
+            // Do nothing, keep the URL as is
+          } 
+          // If it's just a filename, add the uploads path
+          else if (!match.profilePicture.startsWith('/uploads')) {
+            match.profilePicture = `/uploads/profiles/${match.profilePicture}`;
+          }
+        }
+        return match;
+      });
+      
+      setMatches(processedMatches);
       setError(null);
-    } catch (err) {
-      setError(err.message);
-      toast.error('Failed to fetch matches');
+    } catch (error) {
+      console.error('Error fetching matches:', error);
+      toast.error('Failed to load matches');
+      setError(error.message);
     } finally {
       setLoading(false);
     }
@@ -44,30 +63,57 @@ const SkillMatch = () => {
 
   const handleSkillSelection = (skillId) => {
     setSelectedSkills(prev => {
-      if (prev.includes(skillId)) {
-        return prev.filter(id => id !== skillId);
+      if (prev[selectedMatch]?.includes(skillId)) {
+        return {
+          ...prev,
+          [selectedMatch]: prev[selectedMatch].filter(id => id !== skillId)
+        };
       }
-      return [...prev, skillId];
+      return {
+        ...prev,
+        [selectedMatch]: [...(prev[selectedMatch] || []), skillId]
+      };
     });
   };
 
-  const initiateExchange = async (matchId, matchSkills) => {
-    if (selectedSkills.length === 0) {
+  const handleInitiateExchange = async (match) => {
+    if (!selectedSkills[match._id]?.length) {
       toast.error('Please select at least one skill to offer');
       return;
     }
 
     try {
-      const response = await skillAPI.initiateExchange({
-        recipientId: matchId,
-        offeredSkillIds: selectedSkills,
-        requestedSkillIds: matchSkills.map(skill => skill._id)
-      });
-      toast.success('Exchange request sent successfully!');
-      setSelectedSkills([]);
-      fetchMatches(); // Refresh matches
-    } catch (err) {
-      toast.error(err.message || 'Failed to initiate exchange');
+      setIsInitiating(true);
+      const data = {
+        recipientId: match._id,
+        offeredSkillIds: selectedSkills[match._id],
+        requestedSkillIds: match.matchingSkills.map(skill => skill._id)
+      };
+
+      await skillAPI.initiateExchange(data);
+      toast.success('Exchange initiated successfully!');
+      
+      // Refresh matches to update the UI
+      fetchMatches();
+    } catch (error) {
+      console.error('Error initiating exchange:', error);
+      if (error.message.includes('pending exchange')) {
+        toast.error(
+          <div>
+            <p>{error.message}</p>
+            <a 
+              href="/exchanges" 
+              className="text-blue-500 underline mt-2 block"
+            >
+              View your active exchanges
+            </a>
+          </div>
+        );
+      } else {
+        toast.error(error.message || 'Failed to initiate exchange');
+      }
+    } finally {
+      setIsInitiating(false);
     }
   };
 
@@ -79,7 +125,7 @@ const SkillMatch = () => {
 
   if (loading) {
     return (
-      <div className="flex justify-center items-center h-64">
+      <div className="flex justify-center items-center py-12">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
       </div>
     );
@@ -117,23 +163,49 @@ const SkillMatch = () => {
               className="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow"
             >
               <div className="flex items-center mb-4">
-                <div className="w-12 h-12 rounded-full bg-gray-200 flex items-center justify-center mr-4">
-                  {match.profilePicture ? (
-                    <img 
-                      src={match.profilePicture} 
-                      alt={match.name}
-                      className="w-12 h-12 rounded-full object-cover"
-                    />
-                  ) : (
-                    <FaUser className="text-gray-500 text-xl" />
-                  )}
+                <div className="w-16 h-16 flex-shrink-0">
+                  <ProfileImage
+                    src={match.profilePicture}
+                    alt={match.name}
+                    size="md"
+                    className="rounded-full border-2 border-white shadow-md"
+                  />
                 </div>
-                <div>
+                <div className="ml-4">
                   <h3 className="font-semibold text-lg">{match.name}</h3>
                   <p className="text-gray-500 text-sm">{match.location}</p>
+                  {match.compatibility && (
+                    <div className="flex items-center mt-1">
+                      <FaStar className="text-yellow-400 mr-1" />
+                      <span className="text-sm font-medium">
+                        {Math.round(match.compatibility)}% Match
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
 
+              <div className="mt-4">
+                <div className="flex flex-wrap gap-2">
+                  {match.skills?.map((skill, index) => (
+                    <span
+                      key={index}
+                      className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
+                    >
+                      {skill.name}
+                      {skill.level && (
+                        <span className="ml-1 text-blue-600">• {skill.level}</span>
+                      )}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              <div className="mt-6 flex justify-end space-x-3">
+                <button
+                  onClick={() => handleInitiateExchange(match)}
+                  disabled={isInitiating || !selectedSkills[match._id]?.length}
+                  className={`inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 ${
               <div className="mb-4">
                 <div className="flex items-center mb-2">
                   <FaStar className="text-yellow-400 mr-2" />
@@ -145,24 +217,50 @@ const SkillMatch = () => {
                 <div className="flex items-center">
                   <FaExchangeAlt className="text-blue-500 mr-2" />
                   <span className="text-sm text-gray-600">
-                    {match.skills.filter(s => s.status === 'teaching').length} skills to teach
+                    {match.matchingTeachingSkills?.length || 0} skills they teach that you need
+                  </span>
+                </div>
+                <div className="flex items-center mt-1">
+                  <FaExchangeAlt className="text-green-500 mr-2" />
+                  <span className="text-sm text-gray-600">
+                    {match.matchingLearningSkills?.length || 0} skills they need that you teach
                   </span>
                 </div>
               </div>
 
               <div className="space-y-2">
-                <h4 className="font-medium text-sm text-gray-700">Teaching Skills:</h4>
+                <h4 className="font-medium text-sm text-gray-700">Skills They Teach That You Need:</h4>
                 <div className="flex flex-wrap gap-2">
-                  {match.skills
-                    .filter(s => s.status === 'teaching')
-                    .map((skill, index) => (
+                  {match.matchingTeachingSkills && match.matchingTeachingSkills.length > 0 ? (
+                    match.matchingTeachingSkills.map((skill, index) => (
                       <span 
                         key={index}
                         className="px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-xs"
                       >
-                        {skill.skill}
+                        {skill}
                       </span>
-                    ))}
+                    ))
+                  ) : (
+                    <span className="text-gray-500 text-xs">No matching skills</span>
+                  )}
+                </div>
+              </div>
+
+              <div className="space-y-2 mt-3">
+                <h4 className="font-medium text-sm text-gray-700">Skills They Need That You Teach:</h4>
+                <div className="flex flex-wrap gap-2">
+                  {match.matchingLearningSkills && match.matchingLearningSkills.length > 0 ? (
+                    match.matchingLearningSkills.map((skill, index) => (
+                      <span 
+                        key={index}
+                        className="px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs"
+                      >
+                        {skill}
+                      </span>
+                    ))
+                  ) : (
+                    <span className="text-gray-500 text-xs">No matching skills</span>
+                  )}
                 </div>
               </div>
 
@@ -176,7 +274,7 @@ const SkillMatch = () => {
                         key={skill._id}
                         onClick={() => handleSkillSelection(skill._id)}
                         className={`px-2 py-1 rounded-full text-xs transition-colors ${
-                          selectedSkills.includes(skill._id)
+                          selectedSkills[match._id]?.includes(skill._id)
                             ? 'bg-green-100 text-green-800'
                             : 'bg-gray-100 text-gray-800 hover:bg-gray-200'
                         }`}
@@ -188,15 +286,15 @@ const SkillMatch = () => {
               </div>
 
               <button
-                onClick={() => initiateExchange(match._id, match.skills.filter(s => s.status === 'teaching'))}
-                disabled={selectedSkills.length === 0}
-                className={`mt-4 w-full py-2 px-4 rounded transition-colors ${
-                  selectedSkills.length > 0
-                    ? 'bg-blue-500 text-white hover:bg-blue-600'
-                    : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                onClick={() => handleInitiateExchange(match)}
+                disabled={isInitiating || !selectedSkills[match._id]?.length}
+                className={`px-4 py-2 rounded-md text-white ${
+                  isInitiating || !selectedSkills[match._id]?.length
+                    ? 'bg-gray-400 cursor-not-allowed'
+                    : 'bg-blue-600 hover:bg-blue-700'
                 }`}
               >
-                {selectedSkills.length > 0 ? 'Initiate Exchange' : 'Select Skills to Exchange'}
+                {isInitiating ? 'Initiating...' : 'Initiate Exchange'}
               </button>
             </motion.div>
           ))}

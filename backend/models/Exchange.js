@@ -21,6 +21,23 @@ const exchangeSchema = new mongoose.Schema({
     ref: 'Skill',
     required: true
   }],
+  duration: {
+    type: String,
+    required: true,
+    enum: ['1 month', '2 months', '3 months', '6 months']
+  },
+  frequency: {
+    type: String,
+    required: true,
+    enum: ['weekly', 'bi-weekly', 'monthly']
+  },
+  preferredTime: {
+    type: String,
+    required: true
+  },
+  notes: {
+    type: String
+  },
   status: {
     type: String,
     enum: ['pending', 'accepted', 'rejected', 'completed', 'cancelled'],

@@ -5,11 +5,71 @@ const asyncHandler = require('../middleware/async');
 // @route   GET /api/users/:id
 // @access  Private
 exports.getUserProfile = asyncHandler(async (req, res) => {
-  const user = await User.findById(req.params.id).select('-password');
-  if (!user) {
-    return res.status(404).json({ message: 'User not found' });
+  try {
+    const user = await User.findById(req.params.id)
+      .select('-password')
+      .populate('reviews.user', 'name profilePicture')
+      .populate('endorsements.endorser', 'name profilePicture');
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Transform skills into teachingSkills and learningSkills format
+    const teachingSkills = user.skills
+      .filter(skill => skill.status === 'teaching')
+      .map(skill => ({
+        name: skill.skill,
+        level: skill.level,
+        description: skill.description || '',
+        category: skill.category || 'Other',
+        yearsOfExperience: skill.yearsOfExperience || 0,
+        certifications: skill.certifications || [],
+        priority: skill.priority || 'Medium',
+        rating: skill.rating || 0
+      }));
+
+    const learningSkills = user.skills
+      .filter(skill => skill.status === 'learning')
+      .map(skill => ({
+        name: skill.skill,
+        level: skill.level,
+        description: skill.description || '',
+        category: skill.category || 'Other',
+        yearsOfExperience: skill.yearsOfExperience || 0,
+        certifications: skill.certifications || [],
+        priority: skill.priority || 'Medium',
+        rating: skill.rating || 0
+      }));
+
+    // Format the response
+    const profile = {
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      bio: user.bio || '',
+      profilePicture: user.profilePicture || '',
+      location: user.location || '',
+      socialLinks: user.socialLinks || {},
+      teachingSkills: teachingSkills,
+      learningSkills: learningSkills,
+      interests: user.interests || [],
+      achievements: user.achievements || [],
+      rating: user.rating || 0,
+      numReviews: user.numReviews || 0,
+      totalExchanges: user.totalExchanges || 0,
+      isVerified: user.isVerified || false,
+      reviews: user.reviews || [],
+      endorsements: user.endorsements || [],
+      createdAt: user.createdAt,
+      lastActive: user.lastActive
+    };
+
+    res.status(200).json(profile);
+  } catch (error) {
+    console.error('Error in getUserProfile:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
   }
-  res.status(200).json(user);
 });
 
 // @desc    Update user profile
@@ -72,26 +132,47 @@ exports.getUserMatches = asyncHandler(async (req, res) => {
 
   // Calculate match score for each potential match
   const scoredMatches = matches.map(match => {
-    let score = 0;
-    
-    // Calculate skill match score
-    const skillMatches = match.skills.filter(matchSkill => 
+    // Find matching skills
+    const matchingSkills = match.skills.filter(matchSkill => 
       userInterests.includes(matchSkill.skill)
-    ).length;
-    score += skillMatches * 2;
+    );
 
-    // Calculate interest match score
-    const interestMatches = match.interests.filter(interest => 
+    // Find matching interests
+    const matchingInterests = match.interests.filter(interest => 
       userSkills.includes(interest)
-    ).length;
-    score += interestMatches;
+    );
 
-    // Add rating bonus
-    score += match.rating;
+    // Calculate total score
+    const skillScore = matchingSkills.length * 2;
+    const interestScore = matchingInterests.length;
+    const ratingBonus = match.rating;
+    const totalScore = skillScore + interestScore + ratingBonus;
+
+    // Calculate match percentage (max score is 30: 10 skills * 2 + 10 interests + 10 rating)
+    const matchPercentage = (totalScore / 30) * 100;
 
     return {
-      user: match,
-      matchScore: score
+      user: {
+        _id: match._id,
+        name: match.name,
+        email: match.email,
+        location: match.location,
+        profilePicture: match.profilePicture,
+        rating: match.rating,
+        skills: match.skills.map(skill => ({
+          skill: skill.skill,
+          status: skill.status,
+          level: skill.level,
+          description: skill.description
+        }))
+      },
+      matchingSkills: matchingSkills.map(skill => ({
+        name: skill.skill,
+        level: skill.level,
+        status: skill.status
+      })),
+      matchingInterests: matchingInterests,
+      matchScore: matchPercentage
     };
   });
 

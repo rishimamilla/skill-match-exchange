@@ -1,112 +1,134 @@
 import axios from 'axios';
 import { API_URL } from '../config';
 
+// Helper function to get auth header
+const getAuthHeader = () => {
+  const token = localStorage.getItem('token');
+  if (!token) {
+    throw new Error('No authentication token found');
+  }
+  return { Authorization: `Bearer ${token}` };
+};
+
+// Helper function to handle API errors
+const handleApiError = (error) => {
+  if (error.response) {
+    // Server responded with error
+    if (error.response.status === 401) {
+      // Clear token and redirect to login
+      localStorage.removeItem('token');
+      window.location.href = '/login';
+      throw new Error('Session expired. Please log in again.');
+    }
+    throw new Error(error.response.data?.message || 'Server error occurred');
+  } else if (error.request) {
+    // Request made but no response
+    throw new Error('No response from server. Please check your connection.');
+  } else {
+    // Other errors
+    throw new Error(error.message || 'An unexpected error occurred');
+  }
+};
+
+// Helper function to handle API responses
+const handleResponse = async (response) => {
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.message || 'Something went wrong');
+  }
+  return response.json();
+};
+
 const skillAPI = {
   // Get all skills
   getAllSkills: async () => {
     try {
       const response = await axios.get(`${API_URL}/skills`, {
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem('token')}`
-        }
+        headers: getAuthHeader()
       });
       return response.data;
     } catch (error) {
-      throw new Error(error.response?.data?.message || 'Failed to fetch skills');
+      throw handleApiError(error);
+    }
+  },
+
+  // Get skill by ID
+  getSkillById: async (skillId) => {
+    try {
+      const response = await axios.get(`${API_URL}/skills/${skillId}`, {
+        headers: getAuthHeader()
+      });
+      return response.data;
+    } catch (error) {
+      throw handleApiError(error);
     }
   },
 
   // Get skill matches for current user
   getSkillMatches: async () => {
     try {
-      const response = await axios.get(`${API_URL}/skills/matches`, {
+      console.log('Fetching skill matches...');
+      const response = await axios.get(`${API_URL}/matches`, {
         headers: {
           Authorization: `Bearer ${localStorage.getItem('token')}`
         }
       });
+      console.log('Skill matches response:', response.data);
       return response.data;
     } catch (error) {
-      throw new Error(error.response?.data?.message || 'Failed to fetch skill matches');
+      console.error('Error fetching skill matches:', error);
+      throw handleApiError(error);
     }
   },
 
   // Add a skill to user's profile
   addUserSkill: async (skillData) => {
     try {
-      console.log('Adding skill with data:', skillData);
       const response = await axios.post(
-        `${API_URL}/skills/user/${skillData.userId}`,
-        {
-          skill: skillData.skill,
-          level: skillData.level,
-          yearsOfExperience: skillData.yearsOfExperience,
-          status: skillData.status,
-          category: skillData.category,
-          description: skillData.description,
-          certifications: skillData.certifications,
-          priority: skillData.priority
-        },
+        `${API_URL}/skills/user`,
+        skillData,
         {
           headers: {
-            Authorization: `Bearer ${localStorage.getItem('token')}`,
+            ...getAuthHeader(),
             'Content-Type': 'application/json'
           }
         }
       );
-      console.log('Skill added successfully:', response.data);
       return response.data;
     } catch (error) {
-      console.error('Error adding skill:', error.response?.data || error);
-      throw new Error(error.response?.data?.message || 'Failed to add skill');
+      throw handleApiError(error);
     }
   },
 
   // Update a user's skill
-  updateUserSkill: async (skillData) => {
+  updateUserSkill: async (skillName, skillData) => {
     try {
-      console.log('Updating skill with data:', skillData);
       const response = await axios.put(
-        `${API_URL}/skills/user/${skillData.userId}`,
-        {
-          _id: skillData._id,
-          skill: skillData.skill,
-          level: skillData.level,
-          yearsOfExperience: skillData.yearsOfExperience,
-          status: skillData.status,
-          category: skillData.category,
-          description: skillData.description,
-          certifications: skillData.certifications,
-          priority: skillData.priority
-        },
+        `${API_URL}/skills/user/${encodeURIComponent(skillName)}`,
+        skillData,
         {
           headers: {
-            Authorization: `Bearer ${localStorage.getItem('token')}`,
+            ...getAuthHeader(),
             'Content-Type': 'application/json'
           }
         }
       );
-      console.log('Skill updated successfully:', response.data);
       return response.data;
     } catch (error) {
-      console.error('Error updating skill:', error.response?.data || error);
-      throw new Error(error.response?.data?.message || 'Failed to update skill');
+      throw handleApiError(error);
     }
   },
 
   // Remove a skill from user's profile
-  removeUserSkill: async (skillId) => {
+  removeUserSkill: async (skillName) => {
     try {
-      const response = await axios.delete(
-        `${API_URL}/skills/user/${skillId}`,
-        {
-          headers: {
-            Authorization: `Bearer ${localStorage.getItem('token')}`
-          }
-        }
-      );
+      const encodedSkillName = encodeURIComponent(skillName);
+      const response = await axios.delete(`${API_URL}/skills/user/${encodedSkillName}`, {
+        headers: getAuthHeader()
+      });
       return response.data;
     } catch (error) {
-      throw new Error(error.response?.data?.message || 'Failed to remove skill');
+      throw handleApiError(error);
     }
   },
 
@@ -115,109 +137,73 @@ const skillAPI = {
     try {
       const params = new URLSearchParams();
       
-      // Add search query if provided
-      if (query && query.trim()) {
+      if (query?.trim()) {
         params.append('q', query.trim());
       }
       
-      // Add filters if provided
-      if (filters) {
-        if (filters.category && filters.category !== 'all') {
-          params.append('category', filters.category);
-        }
-        if (filters.difficulty && filters.difficulty !== 'all') {
-          params.append('difficulty', filters.difficulty);
-        }
-        if (filters.minRating) {
-          params.append('minRating', filters.minRating);
-        }
-        if (filters.sortBy) {
-          params.append('sortBy', filters.sortBy);
-        }
-      }
-
-      console.log('Search params:', params.toString());
-
-      const response = await axios.get(`${API_URL}/skills/search?${params.toString()}`, {
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem('token')}`
+      Object.entries(filters).forEach(([key, value]) => {
+        if (value && value !== 'all') {
+          params.append(key, value);
         }
       });
 
-      // Handle different response formats
-      if (Array.isArray(response.data)) {
-        return {
-          skills: response.data,
-          total: response.data.length,
-          count: response.data.length
-        };
-      } else if (response.data && typeof response.data === 'object') {
-        // Handle new format with data property
-        if (response.data.data) {
-          return {
-            skills: response.data.data,
-            total: response.data.total || response.data.data.length,
-            count: response.data.count || response.data.data.length
-          };
-        }
-        // Handle format with direct skills property
-        if (response.data.skills) {
-          return {
-            skills: response.data.skills,
-            total: response.data.total || response.data.skills.length,
-            count: response.data.count || response.data.skills.length
-          };
-        }
-      }
-      
-      throw new Error('Invalid response format from server');
+      const response = await axios.get(`${API_URL}/skills/search?${params.toString()}`, {
+        headers: getAuthHeader()
+      });
+
+      return response.data;
     } catch (error) {
-      console.error('Search error:', error);
-      if (error.response) {
-        console.error('Error response:', error.response.data);
-        throw new Error(error.response.data.message || 'Failed to search skills');
-      }
-      if (error.request) {
-        console.error('No response received:', error.request);
-        throw new Error('No response from server. Please check your connection.');
-      }
-      throw new Error('Network error while searching skills');
+      throw handleApiError(error);
     }
   },
 
-  // Endorse a skill
-  endorseSkill: async (skillId, userId) => {
+  // Add a review to a skill
+  addSkillReview: async (skillId, reviewData) => {
     try {
       const response = await axios.post(
-        `${API_URL}/skills/${skillId}/endorse`,
-        { userId },
+        `${API_URL}/skills/${skillId}/reviews`,
+        reviewData,
         {
           headers: {
-            Authorization: `Bearer ${localStorage.getItem('token')}`,
+            ...getAuthHeader(),
             'Content-Type': 'application/json'
           }
         }
       );
       return response.data;
     } catch (error) {
-      throw new Error(error.response?.data?.message || 'Failed to endorse skill');
+      throw handleApiError(error);
     }
   },
 
-  // Remove endorsement from a skill
-  removeEndorsement: async (skillId, userId) => {
+  // Endorse a skill
+  endorseSkill: async (skillId) => {
     try {
-      const response = await axios.delete(
-        `${API_URL}/skills/${skillId}/endorse/${userId}`,
+      const response = await axios.post(
+        `${API_URL}/skills/${skillId}/endorse`,
+        {},
         {
-          headers: {
-            Authorization: `Bearer ${localStorage.getItem('token')}`
-          }
+          headers: getAuthHeader()
         }
       );
       return response.data;
     } catch (error) {
-      throw new Error(error.response?.data?.message || 'Failed to remove endorsement');
+      throw handleApiError(error);
+    }
+  },
+
+  // Remove endorsement from a skill
+  removeEndorsement: async (skillId) => {
+    try {
+      const response = await axios.delete(
+        `${API_URL}/skills/${skillId}/endorse`,
+        {
+          headers: getAuthHeader()
+        }
+      );
+      return response.data;
+    } catch (error) {
+      throw handleApiError(error);
     }
   },
 
@@ -234,10 +220,22 @@ const skillAPI = {
   // Initiate a skill exchange
   initiateExchange: async (data) => {
     try {
-      const response = await axios.post(`${API_URL}/exchanges`, data);
-      return response.data;
+      console.log('Initiating exchange with data:', data);
+      const response = await axios.post(
+        `${API_URL}/exchanges`,
+        data,
+        {
+          headers: {
+            ...getAuthHeader(),
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+      console.log('Exchange creation response:', response.data);
+      return response;
     } catch (error) {
-      throw error.response?.data || { message: 'Failed to initiate exchange' };
+      console.error('Error in initiateExchange:', error);
+      throw handleApiError(error);
     }
   },
 
@@ -254,10 +252,16 @@ const skillAPI = {
   // Accept an exchange request
   acceptExchange: async (exchangeId) => {
     try {
-      const response = await axios.put(`${API_URL}/exchanges/${exchangeId}/accept`);
+      const response = await axios.post(`${API_URL}/exchanges/${exchangeId}/accept`, {}, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
       return response.data;
     } catch (error) {
-      throw error.response?.data || { message: 'Failed to accept exchange' };
+      console.error('Error accepting exchange:', error);
+      throw error;
     }
   },
 
@@ -309,6 +313,205 @@ const skillAPI = {
     } catch (error) {
       throw error.response?.data || { message: 'Failed to fetch user statistics' };
     }
+  },
+
+  // Get user profile with detailed information
+  getUserProfile: async (userId) => {
+    try {
+      const response = await axios.get(`${API_URL}/users/${userId}`, {
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+      return response.data;
+    } catch (error) {
+      throw handleApiError(error);
+    }
+  },
+
+  // Get match details between current user and another user
+  getMatchDetails: async (userId) => {
+    try {
+      console.log('Fetching match details for user:', userId);
+      const response = await axios.get(`${API_URL}/matches/${userId}`, {
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+      console.log('Match details response:', response.data);
+      
+      // Check if the response is an array (from the raw data structure)
+      if (Array.isArray(response.data)) {
+        // Find the match for the specific user
+        const userMatch = response.data.find(match => match.user._id === userId);
+        if (userMatch) {
+          console.log('Found match for user:', userMatch);
+          
+          // Add matchQuality and matchStrength based on compatibility score
+          const compatibility = userMatch.compatibility || 0;
+          const matchQuality = compatibility >= 80 ? 'Excellent' : 
+                              compatibility >= 60 ? 'Good' : 
+                              compatibility >= 40 ? 'Fair' : 'Poor';
+          const matchStrength = compatibility >= 80 ? 'Strong' : 
+                               compatibility >= 50 ? 'Moderate' : 'Weak';
+          
+          return {
+            ...userMatch,
+            matchQuality,
+            matchStrength
+          };
+        }
+      }
+      
+      // Ensure the response has the expected structure
+      if (!response.data) {
+        console.error('Empty response from match details API');
+        return {
+          matchPercentage: 0,
+          matchQuality: 'Unknown',
+          matchStrength: 'Unknown',
+          compatibility: 0,
+          matchingSkills: {
+            teaching: [],
+            learning: []
+          }
+        };
+      }
+      
+      // If the response has a compatibility value directly, use it
+      if (typeof response.data.compatibility === 'number') {
+        const compatibility = response.data.compatibility;
+        const matchQuality = compatibility >= 80 ? 'Excellent' : 
+                            compatibility >= 60 ? 'Good' : 
+                            compatibility >= 40 ? 'Fair' : 'Poor';
+        const matchStrength = compatibility >= 80 ? 'Strong' : 
+                             compatibility >= 50 ? 'Moderate' : 'Weak';
+        
+        return {
+          ...response.data,
+          matchQuality,
+          matchStrength
+        };
+      }
+      
+      // If the response has a matchPercentage, use it as compatibility
+      if (typeof response.data.matchPercentage === 'number') {
+        const compatibility = response.data.matchPercentage;
+        const matchQuality = compatibility >= 80 ? 'Excellent' : 
+                            compatibility >= 60 ? 'Good' : 
+                            compatibility >= 40 ? 'Fair' : 'Poor';
+        const matchStrength = compatibility >= 80 ? 'Strong' : 
+                             compatibility >= 50 ? 'Moderate' : 'Weak';
+        
+        return {
+          ...response.data,
+          compatibility: response.data.matchPercentage,
+          matchQuality,
+          matchStrength
+        };
+      }
+      
+      // If the response has a score, use it as matchPercentage
+      if (typeof response.data.score === 'number') {
+        const compatibility = response.data.score;
+        const matchQuality = compatibility >= 80 ? 'Excellent' : 
+                            compatibility >= 60 ? 'Good' : 
+                            compatibility >= 40 ? 'Fair' : 'Poor';
+        const matchStrength = compatibility >= 80 ? 'Strong' : 
+                             compatibility >= 50 ? 'Moderate' : 'Weak';
+        
+        return {
+          ...response.data,
+          matchPercentage: response.data.score,
+          compatibility: response.data.score,
+          matchQuality,
+          matchStrength
+        };
+      }
+      
+      // If the response has a compatibility object but no matchPercentage, calculate it
+      if (response.data.compatibility && typeof response.data.compatibility === 'object') {
+        const { skillMatch, styleCompatibility, availabilityOverlap, timezoneCompatibility } = response.data.compatibility;
+        
+        if (typeof skillMatch === 'number' && typeof styleCompatibility === 'number' &&
+            typeof availabilityOverlap === 'number' && typeof timezoneCompatibility === 'number') {
+          // Calculate weighted average
+          const percentage = Math.round(
+            (skillMatch * 0.4) +
+            (styleCompatibility * 0.3) +
+            (availabilityOverlap * 0.2) +
+            (timezoneCompatibility * 0.1)
+          );
+          
+          const matchQuality = percentage >= 80 ? 'Excellent' : 
+                              percentage >= 60 ? 'Good' : 
+                              percentage >= 40 ? 'Fair' : 'Poor';
+          const matchStrength = percentage >= 80 ? 'Strong' : 
+                               percentage >= 50 ? 'Moderate' : 'Weak';
+          
+          return {
+            ...response.data,
+            matchPercentage: percentage,
+            compatibility: percentage,
+            matchQuality,
+            matchStrength
+          };
+        }
+      }
+      
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching match details:', error);
+      // Return a default structure instead of throwing an error
+      return {
+        matchPercentage: 0,
+        matchQuality: 'Unknown',
+        matchStrength: 'Unknown',
+        compatibility: 0,
+        matchingSkills: {
+          teaching: [],
+          learning: []
+        }
+      };
+    }
+  },
+
+  getExchanges: async () => {
+    try {
+      const response = await axios.get('/api/exchanges', {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+      return response.data;
+    } catch (error) {
+      throw handleApiError(error);
+    }
+  },
+
+  // Notification API functions
+  getNotifications: async () => {
+    const response = await fetch(`${API_URL}/notifications`, {
+      headers: getAuthHeader()
+    });
+    return handleResponse(response);
+  },
+
+  markNotificationAsRead: async (notificationId) => {
+    const response = await fetch(`${API_URL}/notifications/${notificationId}/read`, {
+      method: 'PUT',
+      headers: getAuthHeader()
+    });
+    return handleResponse(response);
+  },
+
+  markAllNotificationsAsRead: async () => {
+    const response = await fetch(`${API_URL}/notifications/read-all`, {
+      method: 'PUT',
+      headers: getAuthHeader()
+    });
+    return handleResponse(response);
   }
 };
 
