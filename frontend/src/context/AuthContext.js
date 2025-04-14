@@ -44,6 +44,7 @@ export const AuthProvider = ({ children }) => {
       const { token, user } = response.data;
       
       localStorage.setItem('token', token);
+      localStorage.setItem('userId', user._id);
       setUser(user);
       setIsAuthenticated(true);
       
@@ -68,6 +69,7 @@ export const AuthProvider = ({ children }) => {
       
       const { token, user } = response.data;
       localStorage.setItem('token', token);
+      localStorage.setItem('userId', user._id);
       setUser(user);
       setIsAuthenticated(true);
       
@@ -84,6 +86,7 @@ export const AuthProvider = ({ children }) => {
 
   const logout = () => {
     localStorage.removeItem('token');
+    localStorage.removeItem('userId');
     setUser(null);
     setIsAuthenticated(false);
     toast.success('Logged out successfully');

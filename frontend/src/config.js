@@ -7,18 +7,34 @@ export const getBaseUrl = () => {
 
 // Function to construct the correct URL for static files
 export const getStaticFileUrl = (path) => {
-  if (!path) return null;
+  if (!path) return '/default-avatar.png';
   
   // If it's a data URL (base64), return it directly
   if (path.startsWith('data:')) {
     return path;
   }
   
-  // If it's a relative URL, add the base URL
-  if (path.startsWith('/')) {
-    return `${getBaseUrl()}${path}`;
+  // If it's already a full URL, return it
+  if (path.startsWith('http')) {
+    return path;
   }
   
-  // If it's already a full URL, return it
-  return path;
+  // Clean the path
+  const cleanPath = path.replace(/^\/+/, ''); // Remove leading slashes
+  
+  // If it's a relative URL, ensure it starts with uploads/profiles
+  const normalizedPath = cleanPath.startsWith('uploads/') ? `/${cleanPath}` : `/uploads/profiles/${cleanPath}`;
+  
+  // Add cache-busting parameter to prevent caching issues
+  const timestamp = new Date().getTime();
+  const url = `${getBaseUrl()}${normalizedPath}?t=${timestamp}`;
+  
+  // Validate the URL
+  try {
+    new URL(url);
+    return url;
+  } catch (error) {
+    console.error('Invalid URL:', url, 'for path:', path);
+    return '/default-avatar.png';
+  }
 }; 

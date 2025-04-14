@@ -24,6 +24,7 @@ const chatSchema = new mongoose.Schema({
   participants: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: "User",
+    required: true
   }],
   messages: [messageSchema],
   lastMessage: {
@@ -33,8 +34,8 @@ const chatSchema = new mongoose.Schema({
   unreadCount: {
     type: Map,
     of: Number,
-    default: new Map(),
-  },
+    default: () => new Map()
+  }
 }, {
   timestamps: true,
 });

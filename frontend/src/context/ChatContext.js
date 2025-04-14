@@ -37,18 +37,30 @@ export const ChatProvider = ({ children }) => {
       });
 
       socket.on('message', (message) => {
+        // Update chats list
         setChats((prevChats) => {
           const chatIndex = prevChats.findIndex((c) => c._id === message.chatId);
           if (chatIndex > -1) {
             const updatedChats = [...prevChats];
+            if (!updatedChats[chatIndex].messages) {
+              updatedChats[chatIndex].messages = [];
+            }
             updatedChats[chatIndex].messages.push(message);
             return updatedChats;
           }
           return prevChats;
         });
+
+        // Update current chat if it's the active chat
+        if (currentChat && currentChat._id === message.chatId) {
+          setCurrentChat(prev => ({
+            ...prev,
+            messages: [...(prev.messages || []), message]
+          }));
+        }
       });
     }
-  }, [socket, user]);
+  }, [socket, user, currentChat]);
 
   const fetchChats = useCallback(async () => {
     setLoading(true);
@@ -90,36 +102,53 @@ export const ChatProvider = ({ children }) => {
   const sendChatMessage = useCallback(async (chatId, content) => {
     try {
       const message = await sendMessage(chatId, content);
+      
+      // Update chats list
       setChats((prevChats) => {
         const chatIndex = prevChats.findIndex((c) => c._id === chatId);
         if (chatIndex > -1) {
           const updatedChats = [...prevChats];
+          if (!updatedChats[chatIndex].messages) {
+            updatedChats[chatIndex].messages = [];
+          }
           updatedChats[chatIndex].messages.push(message);
           return updatedChats;
         }
         return prevChats;
       });
+
+      // Update current chat
+      if (currentChat && currentChat._id === chatId) {
+        setCurrentChat(prev => ({
+          ...prev,
+          messages: [...(prev.messages || []), message]
+        }));
+      }
+
       return message;
     } catch (err) {
       setError(err.message);
-      return null;
+      throw err;
     }
-  }, []);
+  }, [currentChat]);
 
-  const value = {
-    chats,
-    currentChat,
-    loading,
-    error,
-    onlineUsers,
-    fetchChats,
-    fetchChatById,
-    startChat,
-    sendChatMessage,
-    setCurrentChat,
-  };
-
-  return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;
+  return (
+    <ChatContext.Provider
+      value={{
+        chats,
+        currentChat,
+        loading,
+        error,
+        onlineUsers,
+        fetchChats,
+        fetchChatById,
+        startChat,
+        sendChatMessage,
+      }}
+    >
+      {children}
+    </ChatContext.Provider>
+  );
 };
 
 export const useChat = () => {
